@@ -63,4 +63,4 @@ External file system can be **mounted**/**unmounted** using the following functi
 | Method  | Notes |
 | - | - |
 | uos.mountsd([chdir]) | Initialize SD card and mount file system on **/sd** directory. If optional argument *chdir* is set to **True**, directory is changed to */sd* after successful mount |
-| uos.mountsd() | Unmount SD card. Directory is changed to */flash* after successful unmount |
+| uos.umountsd() | Unmount SD card. Directory is changed to */flash* after successful unmount |
