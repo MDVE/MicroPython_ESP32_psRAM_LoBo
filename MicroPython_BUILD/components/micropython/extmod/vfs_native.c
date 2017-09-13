@@ -52,7 +52,7 @@
 #include "esp_log.h"
 #include "spiffs_vfs.h"
 #include "driver/sdmmc_types.h"
-#include "driver/sdmmc_defs.h";
+#include "driver/sdmmc_defs.h"
 #include "diskio.h"
 #include <fcntl.h>
 #include "diskio_spiflash.h"
@@ -65,6 +65,7 @@
 #include "sdkconfig.h"
 
 
+#if !MICROPY_USE_SPIFFS
 // esp32 partition configuration needed for wear leveling driver
 static esp_partition_t fs_part = {
     ESP_PARTITION_TYPE_DATA,        //type
@@ -74,6 +75,9 @@ static esp_partition_t fs_part = {
     "uPYpart",                      // label
     MICROPY_INTERNALFS_ENCRIPTED    // encrypted (from mpconfigport.h)
 };
+
+STATIC wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
+#endif
 
 STATIC const byte fresult_to_errno_table[20] = {
     [FR_OK] = 0,
@@ -108,10 +112,7 @@ STATIC const byte fresult_to_errno_table[20] = {
 
 STATIC const char *TAG = "vfs_native";
 
-#if !MICROPY_USE_SPIFFS
-STATIC wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
-#endif
-STATIC bool native_vfs_mounted[2] = {false, false};
+bool native_vfs_mounted[2] = {false, false};
 STATIC sdmmc_card_t *sdmmc_card;
 
 
@@ -124,10 +125,10 @@ int physicalPath(const char *path, char *ph_path)
 {
     if (path[0] == '/') {
     	// absolute path
-    	if (strstr(path, "/flash") == path) {
+    	if (strstr(path, VFS_NATIVE_INTERNAL_MP) == path) {
 			sprintf(ph_path, "%s%s", VFS_NATIVE_MOUNT_POINT, path+6);
     	}
-    	else if (strstr(path, "/sd") == path) {
+    	else if (strstr(path, VFS_NATIVE_EXTERNAL_MP) == path) {
 			sprintf(ph_path, "%s%s", VFS_NATIVE_SDCARD_MOUNT_POINT, path+3);
     	}
     	else return -3;
@@ -280,8 +281,8 @@ const char *mkabspath(fs_user_mount_t *vfs, const char *path, char *absbuf, int 
 	return absbuf;
 }
 
-//================================================================================================================
-STATIC mp_obj_t native_vfs_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+//=========================================================================================================
+mp_obj_t native_vfs_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
 	mp_arg_check_num(n_args, n_kw, 1, 2, false);
 
 	mp_int_t dev_type = mp_obj_get_int(args[0]);
@@ -292,7 +293,7 @@ STATIC mp_obj_t native_vfs_make_new(const mp_obj_type_t *type, size_t n_args, si
 
 	// create new object
 	fs_user_mount_t *vfs = m_new_obj(fs_user_mount_t);
-	vfs->base.type = type;
+	vfs->base.type = &mp_native_vfs_type; //type;
 	vfs->device = mp_obj_get_int(args[0]);
 
 	return MP_OBJ_FROM_PTR(vfs);
@@ -445,13 +446,14 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(native_vfs_mkdir_obj, native_vfs_mkdir);
 
 /// Change current directory.
 //-------------------------------------------------------------------
-STATIC mp_obj_t native_vfs_chdir(mp_obj_t vfs_in, mp_obj_t path_in) {
+static mp_obj_t native_vfs_chdir(mp_obj_t vfs_in, mp_obj_t path_in) {
 	mp_obj_native_vfs_t *self = MP_OBJ_TO_PTR(vfs_in);
 	const char *path = mp_obj_str_get_str(path_in);
 
 	char absbuf[MICROPY_ALLOC_PATH_MAX + 1];
 	path = mkabspath(self, path, absbuf, sizeof(absbuf));
 	if (path == NULL) {
+		ESP_LOGD(TAG, "chdir(): Error: path is NULL");
 		mp_raise_OSError(errno);
 		return mp_const_none;
 	}
@@ -728,6 +730,68 @@ STATIC void sdcard_print_info(const sdmmc_card_t* card, int mode)
     #endif
 }
 
+//-------------------------
+static void _sdcard_mount()
+{
+    mp_int_t card_mode = 3;
+
+    // Configure sdmmc interface
+	#if defined(CONFIG_SDCARD_MODE1) && defined(IDF_HAS_SDSPIHOST)
+		sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+		sdspi_slot_config_t slot_config = SDSPI_SLOT_CONFIG_DEFAULT();
+	    gpio_set_pull_mode(CONFIG_SDCARD_MISO, GPIO_PULLUP_ONLY);
+	    gpio_set_pull_mode(CONFIG_SDCARD_CLK, GPIO_PULLUP_ONLY);
+	    gpio_set_pull_mode(CONFIG_SDCARD_MOSI, GPIO_PULLUP_ONLY);
+	    slot_config.gpio_miso = CONFIG_SDCARD_MISO;
+	    slot_config.gpio_mosi = CONFIG_SDCARD_MOSI;
+	    slot_config.gpio_sck  = CONFIG_SDCARD_CLK;
+	    slot_config.gpio_cs   = CONFIG_SDCARD_CS;
+	    card_mode = 1;
+	#else
+		sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+		sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+		#if defined(CONFIG_SDCARD_MODE2) || (defined(CONFIG_SDCARD_MODE1) && !defined(IDF_HAS_SDSPIHOST))
+	        // Use 1-line SD mode
+		    gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);
+		    gpio_set_pull_mode(14, GPIO_PULLUP_ONLY);
+		    gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);
+	        host.flags = SDMMC_HOST_FLAG_1BIT;
+	        slot_config.width = 1;
+		    card_mode = 2;
+		#else
+	        gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);
+	        gpio_set_pull_mode(14, GPIO_PULLUP_ONLY);
+	        gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);
+	        gpio_set_pull_mode(4, GPIO_PULLUP_ONLY);
+	        gpio_set_pull_mode(12, GPIO_PULLUP_ONLY);
+	        gpio_set_pull_mode(13, GPIO_PULLUP_ONLY);
+		    card_mode = 3;
+		#endif
+	#endif
+
+	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = false,
+        .max_files = CONFIG_MICROPY_FATFS_MAX_OPEN_FILES
+    };
+
+    esp_err_t ret = esp_vfs_fat_sdmmc_mount(VFS_NATIVE_SDCARD_MOUNT_POINT, &host, &slot_config, &mount_config, &sdmmc_card);
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount filesystem on SDcard.");
+        }
+        else if (ret == ESP_ERR_NO_MEM) {
+            ESP_LOGE(TAG, "Failed to initialize SDcard: not enough memory).");
+        }
+        else {
+            ESP_LOGE(TAG, "Failed to initialize SDcard (%d).", ret);
+        }
+		mp_raise_OSError(MP_EIO);
+    }
+	ESP_LOGV(TAG, "SDCard FATFS mounted.");
+    sdcard_print_info(sdmmc_card, card_mode);
+	native_vfs_mounted[VFS_NATIVE_TYPE_SDCARD] = true;
+}
+
 //------------------------------------------------------------------------------------
 STATIC mp_obj_t native_vfs_mount(mp_obj_t self_in, mp_obj_t readonly, mp_obj_t mkfs) {
 	fs_user_mount_t *self = MP_OBJ_TO_PTR(self_in);
@@ -774,59 +838,7 @@ STATIC mp_obj_t native_vfs_mount(mp_obj_t self_in, mp_obj_t readonly, mp_obj_t m
 		#endif
 	}
 	else if (self->device == VFS_NATIVE_TYPE_SDCARD) {
-	    mp_int_t card_mode = 3;
-
-	    // Configure sdmmc interface
-		#if defined(CONFIG_SDCARD_MODE1) && defined(IDF_HAS_SDSPIHOST)
-			sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-			sdspi_slot_config_t slot_config = SDSPI_SLOT_CONFIG_DEFAULT();
-		    gpio_set_pull_mode(CONFIG_SDCARD_MISO, GPIO_PULLUP_ONLY);
-		    gpio_set_pull_mode(CONFIG_SDCARD_CLK, GPIO_PULLUP_ONLY);
-		    gpio_set_pull_mode(CONFIG_SDCARD_MOSI, GPIO_PULLUP_ONLY);
-		    slot_config.gpio_miso = CONFIG_SDCARD_MISO;
-		    slot_config.gpio_mosi = CONFIG_SDCARD_MOSI;
-		    slot_config.gpio_sck  = CONFIG_SDCARD_CLK;
-		    slot_config.gpio_cs   = CONFIG_SDCARD_CS;
-		    card_mode = 1;
-		#else
-			sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-			sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-			#if defined(CONFIG_SDCARD_MODE2) || (defined(CONFIG_SDCARD_MODE1) && !defined(IDF_HAS_SDSPIHOST))
-		        // Use 1-line SD mode
-			    gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);
-			    gpio_set_pull_mode(14, GPIO_PULLUP_ONLY);
-			    gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);
-		        host.flags = SDMMC_HOST_FLAG_1BIT;
-		        slot_config.width = 1;
-			    card_mode = 2;
-			#else
-		        gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);
-		        gpio_set_pull_mode(14, GPIO_PULLUP_ONLY);
-		        gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);
-		        gpio_set_pull_mode(4, GPIO_PULLUP_ONLY);
-		        gpio_set_pull_mode(12, GPIO_PULLUP_ONLY);
-		        gpio_set_pull_mode(13, GPIO_PULLUP_ONLY);
-			    card_mode = 3;
-			#endif
-		#endif
-
-		esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-	        .format_if_mount_failed = false,
-	        .max_files = CONFIG_MICROPY_FATFS_MAX_OPEN_FILES
-	    };
-
-	    esp_err_t ret = esp_vfs_fat_sdmmc_mount(VFS_NATIVE_SDCARD_MOUNT_POINT, &host, &slot_config, &mount_config, &sdmmc_card);
-	    if (ret != ESP_OK) {
-	        if (ret == ESP_FAIL) {
-	            ESP_LOGE(TAG, "Failed to mount filesystem on SDcard.");
-	        } else {
-	            ESP_LOGE(TAG, "Failed to initialize SDcard (%d).", ret);
-	        }
-			mp_raise_OSError(MP_EIO);
-	    }
-		ESP_LOGV(TAG, "SDCard FATFS mounted.");
-        sdcard_print_info(sdmmc_card, card_mode);
-		native_vfs_mounted[self->device] = true;
+		_sdcard_mount();
 	}
 
 	return mp_const_none;
@@ -854,6 +866,38 @@ STATIC mp_obj_t native_vfs_umount(mp_obj_t self_in) {
 	return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(native_vfs_umount_obj, native_vfs_umount);
+
+
+//-------------------------------------
+int mount_vfs(int type, char *chdir_to)
+{
+	char mp[16];
+    mp_obj_t args1[1];
+    mp_obj_t args2[2];
+
+    if (type == VFS_NATIVE_TYPE_SPIFLASH) strcpy(mp, VFS_NATIVE_INTERNAL_MP);
+    else if (type == VFS_NATIVE_TYPE_SDCARD) strcpy(mp, VFS_NATIVE_EXTERNAL_MP);
+    else return -1;
+
+    args1[0] = mp_obj_new_int(type);
+    const mp_obj_type_t *vfsp = &mp_native_vfs_type;
+    mp_obj_t vfso = vfsp->make_new(&mp_native_vfs_type, 1, 0, args1);
+
+    // mount flash file system
+    args2[0] = vfso;
+    args2[1] = mp_obj_new_str(mp, strlen(mp), false);
+    mp_obj_t res = mp_call_function_n_kw(MP_OBJ_FROM_PTR(&mp_vfs_mount_obj), 2, 0, args2);
+
+    if (res == mp_const_none) {
+    	if (chdir_to != NULL) {
+			// Change directory
+			mp_call_function_1(MP_OBJ_FROM_PTR(&mp_vfs_chdir_obj), args2[1]);
+    	}
+    }
+    else return -2;
+    return 0;
+}
+
 
 //===============================================================
 STATIC const mp_rom_map_elem_t native_vfs_locals_dict_table[] = {

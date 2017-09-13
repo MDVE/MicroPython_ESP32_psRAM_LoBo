@@ -36,7 +36,7 @@
 
 #if MICROPY_PY_SYS
 
-#include "genhdr/mpversion.h"
+#include "mpversion.h"
 
 /// \module sys - system specific functions
 

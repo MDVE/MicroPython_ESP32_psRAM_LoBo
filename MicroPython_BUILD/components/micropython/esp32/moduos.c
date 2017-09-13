@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "esp_system.h"
+#include "esp_log.h"
 
 #include "py/mpconfig.h"
 #include "py/obj.h"
@@ -37,7 +38,7 @@
 #include "py/runtime.h"
 #include "py/mperrno.h"
 #include "extmod/vfs.h"
-#include "genhdr/mpversion.h"
+#include "mpversion.h"
 #include "extmod/vfs_native.h"
 
 //extern const mp_obj_type_t mp_fat_vfs_type;
@@ -63,11 +64,13 @@ STATIC MP_DEFINE_ATTRTUPLE(
     (mp_obj_t)&os_uname_info_machine_obj
 );
 
+//------------------------------
 STATIC mp_obj_t os_uname(void) {
     return (mp_obj_t)&os_uname_info_obj;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(os_uname_obj, os_uname);
 
+//----------------------------------------
 STATIC mp_obj_t os_urandom(mp_obj_t num) {
     mp_int_t n = mp_obj_get_int(num);
     vstr_t vstr;
@@ -87,6 +90,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(os_urandom_obj, os_urandom);
 #if MICROPY_PY_OS_DUPTERM
 extern const mp_obj_type_t mp_uos_dupterm_obj;
 
+//--------------------------------------------------
 STATIC mp_obj_t os_dupterm_notify(mp_obj_t obj_in) {
     (void)obj_in;
     //mp_hal_signal_dupterm_input();
@@ -94,6 +98,37 @@ STATIC mp_obj_t os_dupterm_notify(mp_obj_t obj_in) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(os_dupterm_notify_obj, os_dupterm_notify);
 #endif
+
+
+//------------------------------------------------------------------
+STATIC mp_obj_t os_mount_sdcard(size_t n_args, const mp_obj_t *args)
+{
+	int res = -1;
+	if (n_args > 0) {
+		int chd = mp_obj_get_int(args[0]);
+		if (chd) {
+		    int res = mount_vfs(VFS_NATIVE_TYPE_SDCARD, VFS_NATIVE_EXTERNAL_MP);
+		}
+	}
+	else res = mount_vfs(VFS_NATIVE_TYPE_SDCARD, NULL);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(os_mount_sdcard_obj, 0, 1, os_mount_sdcard);
+
+//------------------------------------
+STATIC mp_obj_t os_umount_sdcard(void)
+{
+    // umount external (sdcard) file system
+	mp_obj_t sddir = mp_obj_new_str(VFS_NATIVE_EXTERNAL_MP, strlen(VFS_NATIVE_EXTERNAL_MP), false);
+	mp_call_function_1(MP_OBJ_FROM_PTR(&mp_vfs_umount_obj), sddir);
+
+	// Change directory to /flash
+	sddir = mp_obj_new_str(VFS_NATIVE_INTERNAL_MP, strlen(VFS_NATIVE_INTERNAL_MP), false);
+	mp_call_function_1(MP_OBJ_FROM_PTR(&mp_vfs_chdir_obj), sddir);
+
+	return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(os_umount_sdcard_obj, os_umount_sdcard);
 
 
 //==========================================================
@@ -116,9 +151,11 @@ STATIC const mp_rom_map_elem_t os_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_rename), MP_ROM_PTR(&mp_vfs_rename_obj) },
     { MP_ROM_QSTR(MP_QSTR_stat), MP_ROM_PTR(&mp_vfs_stat_obj) },
     { MP_ROM_QSTR(MP_QSTR_statvfs), MP_ROM_PTR(&mp_vfs_statvfs_obj) },
-    { MP_ROM_QSTR(MP_QSTR_mount), MP_ROM_PTR(&mp_vfs_mount_obj) },
-    { MP_ROM_QSTR(MP_QSTR_umount), MP_ROM_PTR(&mp_vfs_umount_obj) },
-    { MP_ROM_QSTR(MP_QSTR_VfsNative), MP_ROM_PTR(&mp_native_vfs_type) },
+    //{ MP_ROM_QSTR(MP_QSTR_mount), MP_ROM_PTR(&mp_vfs_mount_obj) },
+    //{ MP_ROM_QSTR(MP_QSTR_umount), MP_ROM_PTR(&mp_vfs_umount_obj) },
+    //{ MP_ROM_QSTR(MP_QSTR_VfsNative), MP_ROM_PTR(&mp_native_vfs_type) },
+    { MP_ROM_QSTR(MP_QSTR_mountsd), MP_ROM_PTR(&os_mount_sdcard_obj) },
+    { MP_ROM_QSTR(MP_QSTR_umountsd), MP_ROM_PTR(&os_umount_sdcard_obj) },
     #endif
 };
 

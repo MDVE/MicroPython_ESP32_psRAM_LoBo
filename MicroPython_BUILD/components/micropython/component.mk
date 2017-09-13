@@ -96,6 +96,8 @@ MP_EXTRA_INC += -I$(ESPCOMP)/sdmmc/include
 MP_EXTRA_INC += -I$(ESPCOMP)/fatfs/src
 MP_EXTRA_INC += -I$(ESPCOMP)/heap/include
 MP_EXTRA_INC += -I$(ESPCOMP)/openssl/include
+MP_EXTRA_INC += -I$(ESPCOMP)/bt/include
+MP_EXTRA_INC += -I$(ESPCOMP)/bt/bluedroid/api/include
 
 # CPP macro
 # ------------
@@ -174,6 +176,10 @@ ifdef CONFIG_MICROPY_USE_MQTT
 SRC_C += esp32/modmqtt.c
 endif
 
+ifdef CONFIG_MICROPY_USE_BLUETOOTH
+SRC_C += esp32/network_bluetooth.c
+endif
+
 EXTMOD_SRC_C = $(addprefix extmod/,\
 	modbtree.c \
 	)
@@ -207,7 +213,7 @@ LIB_SRC_C = $(addprefix lib/,\
 
 LIBS_SPIFFS_C = $(addprefix $(PROJECT_PATH)/components/spiffs/,\
 	esp_spiffs.c \
-	list.c \
+	spiffs_list.c \
 	mutex.c \
 	spiffs_cache.c \
 	spiffs_check.c \
@@ -232,8 +238,9 @@ LIBS_SRC_C = $(addprefix esp32/libs/,\
 	tft/SmallFont.c \
 	tft/tooney32.c \
 	tft/Ubuntu16.c \
-	telnet.c \
 	esp_rmt.c \
+	telnet.c \
+	ftp.c \
 	)
 
 ifeq ($(MICROPY_PY_BTREE),1)

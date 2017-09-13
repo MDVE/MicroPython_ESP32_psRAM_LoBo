@@ -53,9 +53,10 @@ typedef struct _mp_vfs_mount_t {
 } mp_vfs_mount_t;
 
 mp_vfs_mount_t *mp_vfs_lookup_path(const char *path, const char **path_out);
-mp_import_stat_t mp_vfs_import_stat(const char *path);
 mp_obj_t mp_vfs_mount(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args);
 mp_obj_t mp_vfs_umount(mp_obj_t mnt_in);
+
+mp_import_stat_t mp_vfs_import_stat(const char *path);
 mp_obj_t mp_vfs_open(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args);
 mp_obj_t mp_vfs_chdir(mp_obj_t path_in);
 mp_obj_t mp_vfs_getcwd(void);

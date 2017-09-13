@@ -77,14 +77,15 @@ SDcard pinout                 uSDcard pinout
 #include "extmod/vfs.h"
 
 #if MICROPY_USE_SPIFFS
-#define VFS_NATIVE_MOUNT_POINT "/spiffs"
+#define VFS_NATIVE_MOUNT_POINT			"/_#!#_spiffs"
 #else
-#define VFS_NATIVE_MOUNT_POINT "/spiflash"
+#define VFS_NATIVE_MOUNT_POINT			"/_#!#_spiflash"
 #endif
-#define VFS_NATIVE_SDCARD_MOUNT_POINT "/sdcard"
-#define VFS_NATIVE_TYPE_SPIFLASH 0
-#define VFS_NATIVE_TYPE_SDCARD 1
-#define VFS_NATIVE_TYPE_SPIFFS 2
+#define VFS_NATIVE_SDCARD_MOUNT_POINT	"/_#!#_sdcard"
+#define VFS_NATIVE_INTERNAL_MP			"/flash"
+#define VFS_NATIVE_EXTERNAL_MP			"/sd"
+#define VFS_NATIVE_TYPE_SPIFLASH		0
+#define VFS_NATIVE_TYPE_SDCARD			1
 
 
 typedef struct _fs_user_mount_t {
@@ -94,11 +95,16 @@ typedef struct _fs_user_mount_t {
 
 extern const mp_obj_type_t mp_native_vfs_type;
 
+bool native_vfs_mounted[2];
+
+
 int physicalPath(const char *path, char *ph_path);
 char *getcwd(char *buf, size_t size);
 const char * mkabspath(fs_user_mount_t *vfs, const char *path, char *absbuf, int buflen);
 mp_import_stat_t native_vfs_import_stat(struct _fs_user_mount_t *vfs, const char *path);
 mp_obj_t nativefs_builtin_open_self(mp_obj_t self_in, mp_obj_t path, mp_obj_t mode);
+int mount_vfs(int type, char *chdir_to);
 MP_DECLARE_CONST_FUN_OBJ_KW(mp_builtin_open_obj);
+//MP_DECLARE_CONST_FUN_OBJ_2(native_vfs_chdir_obj);
 
 mp_obj_t native_vfs_ilistdir2(struct _fs_user_mount_t *vfs, const char *path, bool is_str_type);

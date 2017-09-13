@@ -1,10 +1,34 @@
 /*
- * Copyright (c) 2016, Pycom Limited.
+ * This file is based on 'telnet' from Pycom Limited.
  *
- * This software is licensed under the GNU GPL version 3 or any
- * later version, with permitted additional terms. For more information
- * see the Pycom Licence v1.0 document supplied with this file, or
- * available at https://www.pycom.io/opensource/licensing
+ * Author: LoBo, https://loboris@github.com, loboris@gmail.com
+ * Copyright (c) 2017, LoBo
+ */
+
+/*
+ * This file is part of the MicroPython project, http://micropython.org/
+ *
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2016 Damien P. George on behalf of Pycom Ltd
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  */
 
 #ifndef TELNET_H_
@@ -15,6 +39,8 @@
 #ifdef CONFIG_MICROPY_USE_TELNET
 
 #include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #define TELNET_USER_PASS_LEN_MAX	32
 #define TELNET_DEF_USER             "micro"
@@ -33,6 +59,9 @@ typedef enum {
 
 char telnet_user[TELNET_USER_PASS_LEN_MAX + 1];
 char telnet_pass[TELNET_USER_PASS_LEN_MAX + 1];
+uint32_t telnet_stack_size;
+QueueHandle_t telnet_mutex;
+int telnet_timeout;
 
 /******************************************************************************
  DECLARE PUBLIC FUNCTIONS
@@ -40,7 +69,7 @@ char telnet_pass[TELNET_USER_PASS_LEN_MAX + 1];
 
 void telnet_init (void);
 void telnet_deinit (void);
-bool telnet_run (void);
+int telnet_run (void);
 void telnet_tx_strn (const char *str, int len);
 bool telnet_rx_any (void);
 bool telnet_loggedin (void);
@@ -50,6 +79,8 @@ bool telnet_disable (void);
 bool telnet_isenabled (void);
 bool telnet_reset (void);
 int telnet_getstate();
+bool telnet_terminate (void);
+int32_t telnet_get_maxstack (void);
 
 #endif
 

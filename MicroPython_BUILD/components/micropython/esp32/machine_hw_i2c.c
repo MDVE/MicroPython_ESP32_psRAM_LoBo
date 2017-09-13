@@ -487,7 +487,7 @@ STATIC MP_DEFINE_CONST_DICT(machine_hw_i2c_locals_dict, machine_hw_i2c_locals_di
 //=========================================
 const mp_obj_type_t machine_hw_i2c_type = {
     { &mp_type_type },
-    .name = MP_QSTR_HWI2C,
+    .name = MP_QSTR_I2C,
     .print = machine_hw_i2c_print,
     .make_new = machine_hw_i2c_make_new,
     .locals_dict = (mp_obj_dict_t*)&machine_hw_i2c_locals_dict,

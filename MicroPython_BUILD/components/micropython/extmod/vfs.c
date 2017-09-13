@@ -126,6 +126,7 @@ mp_import_stat_t mp_vfs_import_stat(const char *path) {
     return MP_IMPORT_STAT_NO_EXIST;
 }
 
+
 mp_obj_t mp_vfs_mount(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     enum { ARG_readonly, ARG_mkfs };
     static const mp_arg_t allowed_args[] = {
@@ -223,6 +224,7 @@ mp_obj_t mp_vfs_umount(mp_obj_t mnt_in) {
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_vfs_umount_obj, mp_vfs_umount);
+
 
 // Note: buffering and encoding args are currently ignored
 mp_obj_t mp_vfs_open(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {

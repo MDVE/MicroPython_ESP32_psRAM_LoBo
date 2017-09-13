@@ -1,12 +1,11 @@
 
 from    ujson       import dumps
 from    uos         import stat
-from    _thread     import start_new_thread
 from    utime       import sleep_ms
 from    sys         import exc_info
 from    hashlib     import sha1
 from    ubinascii   import b2a_base64
-import  socket, gc
+import  socket, gc, _thread
 
 try :
     from microWebTemplate import MicroWebTemplate
@@ -101,7 +100,8 @@ class MicroWebSrv :
             self._server.listen(1)
             gc.collect()
             if threaded :
-                start_new_thread("MicroWebServer", self._serverProcess, ())
+                _ = _thread.stack_size(8*1024)
+                _thread.start_new_thread("MicroWebServer", self._serverProcess, ())
             else :
                 self._serverProcess()
 

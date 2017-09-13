@@ -66,6 +66,7 @@ This way many features not available in standard ESP32 MicroPython are enabled, 
 * **DHT** module implemented using ESP32 RMT peripheral
 * **mqtt** module added, implemented in C, runs in separate task
 * **telnet** module added, connect to REPL via WiFi using telnet protocol
+* **ftp** module added, runs as separate ESP32 task
 * **spi** module uses ESP32 hardware spi driver
 
 ---
@@ -174,7 +175,7 @@ to **flash default spiffs image** *components/spiffs_image/spiffs_image.img* to 
 ### Known issues
 
 * In **dual core** mode, the reset reason after deepsleep may be incorrectly detected. In **unicore** mode reset reason is detected correctly.
-* On **psRAM** build **socket** module and all modules which uses it (like *uftpserver*) can be loaded only if the firmware is built in **unicore** mode
+* On **psRAM** build **socket** module and all modules which uses it can be loaded only if the firmware is built in **unicore** mode
 
 ---
 

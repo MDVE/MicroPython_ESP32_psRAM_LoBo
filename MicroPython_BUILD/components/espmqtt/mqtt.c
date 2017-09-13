@@ -604,8 +604,6 @@ void mqtt_task(void *pvParameters)
 // =================================
 int mqtt_start(mqtt_client *client)
 {
-	esp_log_level_set(MQTT_TAG, CONFIG_MQTT_LOG_LEVEL);
-
 	client->terminate_mqtt = false;
 
     uint8_t *rb_buf;

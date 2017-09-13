@@ -76,8 +76,8 @@ menu "MicroPython"
 	    config MICROPY_HEAP_SIZE
 	        int "MicroPython heap size (KB)"
 	        range 48 128 if !MEMMAP_SPIRAM_ENABLE
-	        range 1024 4096 if MEMMAP_SPIRAM_ENABLE
-	        default 92 if !MEMMAP_SPIRAM_ENABLE
+	        range 512 4096 if MEMMAP_SPIRAM_ENABLE
+	        default 80 if !MEMMAP_SPIRAM_ENABLE
 	        default 2048 if MEMMAP_SPIRAM_ENABLE
 	        help
 	        Set the size of the MicroPython heap in Kbytes
@@ -112,7 +112,58 @@ menu "MicroPython"
 	        default y
 	        help
 	        Enable Telnet server and REPL over telnet
+
+	    config MICROPY_USE_FTPSERVER
+	        bool "Enable Ftp server"
+	        depends on MICROPY_USE_THREADS
+	        default y
+	        help
+	        Enable Ftp server
+
+	    menu "FTP Server Configuration"
+	        depends on MICROPY_USE_FTPSERVER
+
+			config FTPSERVER_LOG_LEVEL
+			    int
+			    default 0 if FTPSERVER_LOG_LEVEL0
+			    default 1 if FTPSERVER_LOG_LEVEL1
+			    default 2 if FTPSERVER_LOG_LEVEL2
+			    default 3 if FTPSERVER_LOG_LEVEL3
+			    default 4 if FTPSERVER_LOG_LEVEL4
+			
+				choice
+				    prompt "Set FTP Server log level"
+				    default FTPSERVER_LOG_LEVEL1
+				    help
+				        Select Log (debug) level
+				
+				    config FTPSERVER_LOG_LEVEL0
+				        bool "None"
+				    config FTPSERVER_LOG_LEVEL1
+				        bool "Error"
+				    config FTPSERVER_LOG_LEVEL2
+				        bool "Warning"
+				    config FTPSERVER_LOG_LEVEL3
+				        bool "Info"
+				    config FTPSERVER_LOG_LEVEL4
+				        bool "Debug"
+				endchoice
 	
+		    config MICROPY_FTPSERVER_TIMEOUT
+		        int "Ftp server connection timeout (seconds)"
+		        range 60 3600
+		        default 300
+		        help
+		        Disconnect ftp client if no activity for more than this timeout value
+
+		    config MICROPY_FTPSERVER_BUFFER_SIZE
+		        int "Transfer buffer size (bytes)"
+		        range 512 10240
+		        default 1024
+		        help
+		        	Transfer buffer size
+		        	Larger buffer enables faster transfer
+		endmenu	
     endmenu
 
     menu "Modules"
@@ -133,6 +184,13 @@ menu "MicroPython"
 	        default n
 	        help
 	        Include websockets module into build
+	
+	    config MICROPY_USE_BLUETOOTH
+	        bool "Use Bluetooth module"
+	        depends on BT_ENABLED && BLUEDROID_ENABLED
+	        default n
+	        help
+	        Include Bluetooth module into build
 	
 	    config MICROPY_USE_CURL
 	        bool "Use Curl module"
@@ -224,16 +282,10 @@ menu "MicroPython"
 	    endmenu
 	endmenu
     menu "File systems"
-        config MICROPY_USE_SPIFFS
-            bool "Use SPIFFS"
-            default n
-            help
-            Use spiffs on spi Flash instead of FatFS
-
         config MICROPY_INTERNALFS_START
             hex "Start address of the Flash partition"
             range 0x180000 0x1FF8000
-            default 0x180000
+            default 0x280000
             help
             Starting address of the Flash partition to be used as internal filesystem area
             Use hexadecimal format with leading 0x
@@ -248,6 +300,19 @@ menu "MicroPython"
             File sistem size in KB (Kbytes), minimum is 1s 512K
             Set the size in 4KB increments !
 
+        config MICROPY_FATFS_MAX_OPEN_FILES
+            int "Maximum number of opened files"
+            range 4 24
+            default 6
+            help
+            Maximum number of opened files
+
+        config MICROPY_USE_SPIFFS
+            bool "Use SPIFFS"
+            default n
+            help
+            Use spiffs on spi Flash instead of FatFS
+
         config MICROPY_INTERNALFS_ENCRIPTED
             bool "Use encripted filesystem"
             depends on !MICROPY_USE_SPIFFS
@@ -255,13 +320,6 @@ menu "MicroPython"
             help
             Use encription on internal file system
             Warning: this function is still UNTESTED
-
-        config MICROPY_FATFS_MAX_OPEN_FILES
-            int "Maximum number of opened files"
-            range 4 24
-            default 6
-            help
-            Maximum number of opened files
 
         config MICROPY_SDMMC_SHOW_INFO
             bool "Show SDCard/SPIFFS info"

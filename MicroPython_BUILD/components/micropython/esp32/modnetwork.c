@@ -197,10 +197,11 @@ STATIC mp_obj_t esp_initialize() {
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_LOGD("modnetwork", "Initializing WiFi");
         ESP_EXCEPTIONS( esp_wifi_init(&cfg) );
-        ESP_EXCEPTIONS( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
+        ESP_EXCEPTIONS( esp_wifi_set_storage(WIFI_STORAGE_FLASH) );
         ESP_LOGD("modnetwork", "Initialized");
         ESP_EXCEPTIONS( esp_wifi_set_mode(0) );
         ESP_EXCEPTIONS( esp_wifi_start() );
+        esp_wifi_set_ps(WIFI_PS_NONE);
         ESP_LOGD("modnetwork", "Started");
         initialized = 1;
     }
@@ -529,19 +530,46 @@ extern const mp_obj_type_t mqtt_type;
 #endif
 
 
+#if defined(CONFIG_MICROPY_USE_TELNET) || defined(CONFIG_MICROPY_USE_FTPSERVER)
+#include "mpthreadport.h"
+#endif
+
 //==============================
 #ifdef CONFIG_MICROPY_USE_TELNET
 
 #include "libs/telnet.h"
-#include "mpthreadport.h"
 
-//--------------------------------------
-STATIC mp_obj_t mod_network_startTelnet()
+//----------------------------------------------------------------------------------------------------
+STATIC mp_obj_t mod_network_startTelnet(mp_uint_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args)
 {
-	if (mp_thread_createTelnetTask(TELNET_STACK_LEN)) return mp_const_true;
+    const mp_arg_t allowed_args[] = {
+			{ MP_QSTR_user,         MP_ARG_KW_ONLY  | MP_ARG_OBJ,  {.u_obj = mp_const_none} },
+			{ MP_QSTR_password,     MP_ARG_KW_ONLY  | MP_ARG_OBJ,  {.u_obj = mp_const_none} },
+			{ MP_QSTR_timeout,		MP_ARG_KW_ONLY  | MP_ARG_INT,  {.u_int = TELNET_DEF_TIMEOUT_MS/1000} },
+	};
+	mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+	if (MP_OBJ_IS_STR(args[0].u_obj)) {
+        snprintf(telnet_user, TELNET_USER_PASS_LEN_MAX, mp_obj_str_get_str(args[0].u_obj));
+    }
+	else strcpy(telnet_user, TELNET_DEF_USER);
+
+	if (MP_OBJ_IS_STR(args[1].u_obj)) {
+    	snprintf(telnet_pass, TELNET_USER_PASS_LEN_MAX, mp_obj_str_get_str(args[1].u_obj));
+    }
+	else strcpy(telnet_pass, TELNET_DEF_PASS);
+
+    telnet_timeout = args[2].u_int * 1000;
+    if ((telnet_timeout < 120000) || (telnet_timeout > 86400000)) telnet_timeout = TELNET_DEF_TIMEOUT_MS;
+
+    if (mp_thread_createTelnetTask(TELNET_STACK_LEN)) {
+        ESP_LOGI("[Telnet]","user: %s; pass: %s; timeout: %d\n", telnet_user, telnet_pass, telnet_timeout);
+    	return mp_const_true;
+    }
 	return mp_const_false;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_startTelnet_obj, mod_network_startTelnet);
+STATIC MP_DEFINE_CONST_FUN_OBJ_KW(mod_network_startTelnet_obj, 0, mod_network_startTelnet);
 
 //--------------------------------------
 STATIC mp_obj_t mod_network_pauseTelnet()
@@ -558,6 +586,21 @@ STATIC mp_obj_t mod_network_resumeTelnet()
     return mp_const_false;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_resumeTelnet_obj, mod_network_resumeTelnet);
+
+//--------------------------------------
+STATIC mp_obj_t mod_network_stopTelnet()
+{
+	if (telnet_terminate()) return mp_const_true;
+    return mp_const_false;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_stopTelnet_obj, mod_network_stopTelnet);
+
+//---------------------------------------
+STATIC mp_obj_t mod_network_TelnetMaxStack()
+{
+    return mp_obj_new_int(telnet_get_maxstack());
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_TelnetMaxStack_obj, mod_network_TelnetMaxStack);
 
 //--------------------------------------
 STATIC mp_obj_t mod_network_stateTelnet()
@@ -582,15 +625,18 @@ STATIC mp_obj_t mod_network_stateTelnet()
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_stateTelnet_obj, mod_network_stateTelnet);
 
+//===============================================================
 STATIC const mp_map_elem_t network_telnet_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_start),  MP_ROM_PTR(&mod_network_startTelnet_obj) },
     { MP_ROM_QSTR(MP_QSTR_pause),  MP_ROM_PTR(&mod_network_pauseTelnet_obj) },
     { MP_ROM_QSTR(MP_QSTR_resume), MP_ROM_PTR(&mod_network_resumeTelnet_obj) },
-    { MP_ROM_QSTR(MP_QSTR_status), MP_ROM_PTR(&mod_network_stateTelnet_obj) }
+    { MP_ROM_QSTR(MP_QSTR_stop), MP_ROM_PTR(&mod_network_stopTelnet_obj) },
+    { MP_ROM_QSTR(MP_QSTR_status), MP_ROM_PTR(&mod_network_stateTelnet_obj) },
+    { MP_ROM_QSTR(MP_QSTR_stack), MP_ROM_PTR(&mod_network_TelnetMaxStack_obj) }
 };
-
 STATIC MP_DEFINE_CONST_DICT(network_telnet_locals_dict, network_telnet_locals_dict_table);
 
+//=========================================
 const mp_obj_type_t network_telnet_type = {
     { &mp_type_type },
     .name = MP_QSTR_telnet,
@@ -600,6 +646,148 @@ const mp_obj_type_t network_telnet_type = {
 #endif
 
 
+//=================================
+#ifdef CONFIG_MICROPY_USE_FTPSERVER
+
+#include "libs/ftp.h"
+
+//-------------------------------------------------------------------------------------------------
+STATIC mp_obj_t mod_network_startFtp(mp_uint_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args)
+{
+    const mp_arg_t allowed_args[] = {
+			{ MP_QSTR_user,         MP_ARG_KW_ONLY  | MP_ARG_OBJ,  {.u_obj = mp_const_none} },
+			{ MP_QSTR_password,     MP_ARG_KW_ONLY  | MP_ARG_OBJ,  {.u_obj = mp_const_none} },
+			{ MP_QSTR_buffsize,		MP_ARG_KW_ONLY  | MP_ARG_INT,  {.u_int = CONFIG_MICROPY_FTPSERVER_BUFFER_SIZE} },
+			{ MP_QSTR_timeout,		MP_ARG_KW_ONLY  | MP_ARG_INT,  {.u_int = FTP_CMD_TIMEOUT_MS/1000} },
+	};
+	mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+	if (MP_OBJ_IS_STR(args[0].u_obj)) {
+        snprintf(ftp_user, FTP_USER_PASS_LEN_MAX, mp_obj_str_get_str(args[0].u_obj));
+    }
+	else strcpy(ftp_user, FTP_DEF_USER);
+
+	if (MP_OBJ_IS_STR(args[1].u_obj)) {
+    	snprintf(ftp_pass, FTP_USER_PASS_LEN_MAX, mp_obj_str_get_str(args[1].u_obj));
+    }
+	else strcpy(ftp_pass, FTP_DEF_PASS);
+
+    ftp_buff_size = args[2].u_int;
+    if ((ftp_buff_size < 512) || (ftp_buff_size > 10240)) ftp_buff_size = CONFIG_MICROPY_FTPSERVER_BUFFER_SIZE;
+
+    ftp_timeout = args[3].u_int * 1000;
+    if ((ftp_timeout < 120000) || (ftp_timeout > 86400000)) ftp_timeout = FTP_CMD_TIMEOUT_MS;
+
+    if (mp_thread_createFtpTask(FTP_STACK_LEN)) {
+        ESP_LOGI("[Ftp]","user: %s; pass: %s; buffer: %d; timeout: %d\n", ftp_user, ftp_pass, ftp_buff_size, ftp_timeout);
+    	return mp_const_true;
+    }
+	return mp_const_false;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_KW(mod_network_startFtp_obj, 0, mod_network_startFtp);
+
+//------------------------------------
+STATIC mp_obj_t mod_network_pauseFtp()
+{
+	if (ftp_disable()) return mp_const_true;
+    return mp_const_false;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_pauseFtp_obj, mod_network_pauseFtp);
+
+//-------------------------------------
+STATIC mp_obj_t mod_network_resumeFtp()
+{
+	if (ftp_enable()) return mp_const_true;
+    return mp_const_false;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_resumeFtp_obj, mod_network_resumeFtp);
+
+//-----------------------------------
+STATIC mp_obj_t mod_network_stopFtp()
+{
+	if (ftp_terminate()) return mp_const_true;
+    return mp_const_false;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_stopFtp_obj, mod_network_stopFtp);
+
+//---------------------------------------
+STATIC mp_obj_t mod_network_FtpMaxStack()
+{
+    return mp_obj_new_int(ftp_get_maxstack());
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_FtpMaxStack_obj, mod_network_FtpMaxStack);
+
+//------------------------------------
+STATIC mp_obj_t mod_network_stateFtp()
+{
+	mp_obj_t tuple[4];
+	char state[20] = {'\0'};
+	int ftp_state, ftp_substate;
+
+	int ftpstate = ftp_getstate();
+	if (ftpstate >= 0) {
+		ftp_state = ftpstate & 0xFF;
+		ftp_substate = ftpstate >> 8;
+	}
+	else {
+		ftp_state = ftpstate;
+		ftp_substate = -1;
+	}
+
+	tuple[0] = mp_obj_new_int(ftp_state);
+	tuple[1] = mp_obj_new_int(ftp_substate);
+
+	if (ftp_state == E_FTP_STE_DISABLED) sprintf(state, "Disabled");
+	else if (ftp_state == E_FTP_STE_START) sprintf(state, "Starting");
+	else if (ftp_state == E_FTP_STE_READY) sprintf(state, "Ready");
+	else if (ftp_state == E_FTP_STE_CONNECTED) sprintf(state, "Connected");
+	else if (ftp_state == E_FTP_STE_END_TRANSFER) sprintf(state, "EndTransfer");
+	else if (ftp_state == E_FTP_STE_CONTINUE_LISTING) sprintf(state, "Listing");
+	else if (ftp_state == E_FTP_STE_CONTINUE_FILE_TX) sprintf(state, "Sending file");
+	else if (ftp_state == E_FTP_STE_CONTINUE_FILE_RX) sprintf(state, "Receiving file");
+	else if (ftp_state == -1) sprintf(state, "Not started");
+	else if (ftp_state == -2) sprintf(state, "Busy!");
+	else sprintf(state, "Unknown");
+	tuple[2] = mp_obj_new_str(state, strlen(state), false);
+
+	if (ftp_substate == E_FTP_STE_SUB_DISCONNECTED) sprintf(state, "Data: Disconnected");
+	else if (ftp_substate == E_FTP_STE_SUB_LISTEN_FOR_DATA) sprintf(state, "Data: Listen");
+	else if (ftp_substate == E_FTP_STE_SUB_DATA_CONNECTED) sprintf(state, "Data: Connected");
+	else sprintf(state, "Unknown");
+	tuple[3] = mp_obj_new_str(state, strlen(state), false);
+
+	return mp_obj_new_tuple(4, tuple);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_network_stateFtp_obj, mod_network_stateFtp);
+
+//============================================================
+STATIC const mp_map_elem_t network_ftp_locals_dict_table[] = {
+    { MP_ROM_QSTR(MP_QSTR_start),  MP_ROM_PTR(&mod_network_startFtp_obj) },
+    { MP_ROM_QSTR(MP_QSTR_pause),  MP_ROM_PTR(&mod_network_pauseFtp_obj) },
+    { MP_ROM_QSTR(MP_QSTR_resume), MP_ROM_PTR(&mod_network_resumeFtp_obj) },
+    { MP_ROM_QSTR(MP_QSTR_stop),   MP_ROM_PTR(&mod_network_stopFtp_obj) },
+    { MP_ROM_QSTR(MP_QSTR_status), MP_ROM_PTR(&mod_network_stateFtp_obj) },
+    { MP_ROM_QSTR(MP_QSTR_stack), MP_ROM_PTR(&mod_network_FtpMaxStack_obj) }
+};
+STATIC MP_DEFINE_CONST_DICT(network_ftp_locals_dict, network_ftp_locals_dict_table);
+
+//======================================
+const mp_obj_type_t network_ftp_type = {
+    { &mp_type_type },
+    .name = MP_QSTR_ftp,
+    .locals_dict = (mp_obj_t)&network_ftp_locals_dict,
+};
+
+#endif
+
+
+#ifdef CONFIG_MICROPY_USE_BLUETOOTH
+extern const mp_obj_type_t network_bluetooth_type;
+#endif
+
+
+//==============================================================
 STATIC const mp_map_elem_t mp_module_network_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR___name__), MP_OBJ_NEW_QSTR(MP_QSTR_network) },
     { MP_OBJ_NEW_QSTR(MP_QSTR___init__), (mp_obj_t)&esp_initialize_obj },
@@ -610,6 +798,12 @@ STATIC const mp_map_elem_t mp_module_network_globals_table[] = {
 	#endif
 	#ifdef CONFIG_MICROPY_USE_TELNET
 	{ MP_ROM_QSTR(MP_QSTR_telnet), MP_ROM_PTR(&network_telnet_type) },
+	#endif
+	#ifdef CONFIG_MICROPY_USE_FTPSERVER
+	{ MP_ROM_QSTR(MP_QSTR_ftp), MP_ROM_PTR(&network_ftp_type) },
+	#endif
+	#ifdef CONFIG_MICROPY_USE_BLUETOOTH
+    { MP_ROM_QSTR(MP_QSTR_Bluetooth), MP_ROM_PTR(&network_bluetooth_type) },
 	#endif
 
 #if MODNETWORK_INCLUDE_CONSTANTS

@@ -51,6 +51,8 @@
 #include "py/repl.h"
 #include "py/gc.h"
 #include "py/mphal.h"
+#include "extmod/vfs.h"
+#include "extmod/vfs_native.h"
 #include "lib/mp-readline/readline.h"
 #include "lib/utils/pyexec.h"
 #include "uart.h"
@@ -58,6 +60,12 @@
 #include "mpthreadport.h"
 #include "mpsleep.h"
 #include "machine_rtc.h"
+#ifdef CONFIG_MICROPY_USE_FTPSERVER
+#include "libs/ftp.h"
+#endif
+#ifdef CONFIG_MICROPY_USE_MQTT
+#include "mqtt.h"
+#endif
 
 #include "sdkconfig.h"
 
@@ -125,12 +133,17 @@ soft_reset:
     // initialise peripherals
     machine_pins_init();
 
-	// run boot-up scripts
-    pyexec_frozen_module("_boot.py");
-    pyexec_file("boot.py");
-    if (pyexec_mode_kind == PYEXEC_MODE_FRIENDLY_REPL) {
-        pyexec_file("main.py");
+    // Mount internal flash file system
+    int res = mount_vfs(VFS_NATIVE_TYPE_SPIFLASH, VFS_NATIVE_INTERNAL_MP);
+    if (res == 0) {
+    	// run boot-up scripts
+        //pyexec_frozen_module("_boot.py");
+        pyexec_file("boot.py");
+        if (pyexec_mode_kind == PYEXEC_MODE_FRIENDLY_REPL) {
+            pyexec_file("main.py");
+        }
     }
+    else printf("Error mounting Flash fs\n");
 
     // Main loop
     for (;;) {
@@ -164,10 +177,17 @@ soft_reset:
 void micropython_entry(void) {
     nvs_flash_init();
 
-    // === Set esp32 log level while running MicroPython ===
+    // === Set esp32 log levels while running MicroPython ===
 	esp_log_level_set("*", CONFIG_MICRO_PY_LOG_LEVEL);
+	esp_log_level_set("wifi", 1);
+	#ifdef CONFIG_MICROPY_USE_MQTT
+	esp_log_level_set(MQTT_TAG, CONFIG_MQTT_LOG_LEVEL);
+	#endif
+	#ifdef CONFIG_MICROPY_USE_FTPSERVER
+	esp_log_level_set(FTP_TAG, CONFIG_FTPSERVER_LOG_LEVEL);
+	#endif
 
-    #if CONFIG_FREERTOS_UNICORE
+	#if CONFIG_FREERTOS_UNICORE
     printf("\nFreeRTOS running only on FIRST CORE.\n");
     #else
     printf("\nFreeRTOS running on BOTH CORES, MicroPython task started on App Core.\n");

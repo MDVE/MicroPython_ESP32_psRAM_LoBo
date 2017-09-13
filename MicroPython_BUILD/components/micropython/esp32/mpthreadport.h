@@ -1,12 +1,8 @@
 /*
- * This file is derived from the MicroPython project, http://micropython.org/
+ * This file is based on 'modthreadport' from Pycom Limited.
  *
- * Copyright (c) 2016, Pycom Limited and its licensors.
- *
- * This software is licensed under the GNU GPL version 3 or any later version,
- * with permitted additional terms. For more information see the Pycom Licence
- * v1.0 document supplied with this file, or available at:
- * https://www.pycom.io/opensource/licensing
+ * Author: LoBo, https://loboris@github.com, loboris@gmail.com
+ * Copyright (c) 2017, LoBo
  */
 
 /*
@@ -64,6 +60,11 @@
 #define TELNET_STACK_LEN	(TELNET_STACK_SIZE / sizeof(StackType_t))
 #endif
 
+#ifdef CONFIG_MICROPY_USE_FTPSERVER
+#define FTP_STACK_SIZE	(6*1024)
+#define FTP_STACK_LEN	(FTP_STACK_SIZE / sizeof(StackType_t))
+#endif
+
 //ToDo: Check if thread can run on different priority than main task
 //#if CONFIG_MICROPY_THREAD_PRIORITY > CONFIG_MICROPY_TASK_PRIORITY
 //#define MP_THREAD_PRIORITY	CONFIG_MICROPY_THREAD_PRIORITY
@@ -116,8 +117,6 @@ thread_msg_t thread_messages[MAX_THREAD_MESSAGES];
 
 uint8_t main_accept_msg;
 
-TaskHandle_t mp_thread_create_service(TaskFunction_t pxTaskCode, size_t stack_size, int priority, char *name);
-
 void mp_thread_preinit(void *stack, uint32_t stack_len);
 void mp_thread_init(void);
 void mp_thread_gc_others(void);
@@ -138,7 +137,12 @@ int mp_thread_getname(TaskHandle_t id, char *name);
 int mp_thread_list(thread_list_t *list);
 int mp_thread_replAcceptMsg(int8_t accept);
 
+#ifdef CONFIG_MICROPY_USE_TELNET
 uintptr_t mp_thread_createTelnetTask(size_t stack_size);
+#endif
+#ifdef CONFIG_MICROPY_USE_FTPSERVER
+uintptr_t mp_thread_createFtpTask(size_t stack_size);
+#endif
 
 #endif
 

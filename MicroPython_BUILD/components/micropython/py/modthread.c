@@ -34,14 +34,6 @@
 
 #include "py/mpthread.h"
 
-#if 0 // print debugging info
-#define DEBUG_PRINT (1)
-#define DEBUG_printf DEBUG_printf
-#else // don't print debugging info
-#define DEBUG_PRINT (0)
-#define DEBUG_printf(...) (void)0
-#endif
-
 extern TaskHandle_t MainTaskHandle;
 
 /****************************************************************/
@@ -205,17 +197,13 @@ STATIC void *thread_entry(void *args_in)
     //  mp_pending_exception? (root pointer)
     //  cur_exception (root pointer)
 
-    DEBUG_printf("[thread] start ts=%p args=%p stack=%p\n", &ts, &args, MP_STATE_THREAD(stack_top));
-
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
         mp_call_function_n_kw(args->fun, args->n_args, args->n_kw, args->args);
-        DEBUG_printf("[thread] END ts=%p\n", &ts);
         nlr_pop();
     } else {
         // uncaught exception
         // check for SystemExit
-    	DEBUG_printf("[thread] EXCEPTION ts=%p\n", &ts);
         mp_obj_base_t *exc = (mp_obj_base_t*)nlr.ret_val;
         if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(exc->type), MP_OBJ_FROM_PTR(&mp_type_SystemExit))) {
             // swallow exception silently
@@ -227,8 +215,6 @@ STATIC void *thread_entry(void *args_in)
             mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(exc));
         }
     }
-
-    DEBUG_printf("[thread] finish ts=%p\n", &ts);
 
     MP_THREAD_GIL_EXIT();
 
@@ -542,12 +528,12 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_thread_replAcceptMsg_obj, 0, 1, m
 //=================================================================
 STATIC const mp_rom_map_elem_t mp_module_thread_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR__thread) },
-    { MP_ROM_QSTR(MP_QSTR_LockType), MP_ROM_PTR(&mp_type_thread_lock) },
-    { MP_ROM_QSTR(MP_QSTR_get_ident), MP_ROM_PTR(&mod_thread_get_ident_obj) },
+    //{ MP_ROM_QSTR(MP_QSTR_LockType), MP_ROM_PTR(&mp_type_thread_lock) },
+    //{ MP_ROM_QSTR(MP_QSTR_get_ident), MP_ROM_PTR(&mod_thread_get_ident_obj) },
     { MP_ROM_QSTR(MP_QSTR_stack_size), MP_ROM_PTR(&mod_thread_stack_size_obj) },
     { MP_ROM_QSTR(MP_QSTR_start_new_thread), MP_ROM_PTR(&mod_thread_start_new_thread_obj) },
-    { MP_ROM_QSTR(MP_QSTR_exit), MP_ROM_PTR(&mod_thread_exit_obj) },
-    { MP_ROM_QSTR(MP_QSTR_allocate_lock), MP_ROM_PTR(&mod_thread_allocate_lock_obj) },
+    //{ MP_ROM_QSTR(MP_QSTR_exit), MP_ROM_PTR(&mod_thread_exit_obj) },
+    //{ MP_ROM_QSTR(MP_QSTR_allocate_lock), MP_ROM_PTR(&mod_thread_allocate_lock_obj) },
     { MP_ROM_QSTR(MP_QSTR_allowsuspend), MP_ROM_PTR(&mod_thread_allowsuspend_obj) },
     { MP_ROM_QSTR(MP_QSTR_suspend), MP_ROM_PTR(&mod_thread_suspend_obj) },
     { MP_ROM_QSTR(MP_QSTR_resume), MP_ROM_PTR(&mod_thread_resume_obj) },

@@ -1,10 +1,34 @@
 /*
- * Copyright (c) 2016, Pycom Limited.
+ * This file is based on 'telnet' from Pycom Limited.
  *
- * This software is licensed under the GNU GPL version 3 or any
- * later version, with permitted additional terms. For more information
- * see the Pycom Licence v1.0 document supplied with this file, or
- * available at https://www.pycom.io/opensource/licensing
+ * Author: LoBo, https://loboris@github.com, loboris@gmail.com
+ * Copyright (c) 2017, LoBo
+ */
+
+/*
+ * This file is part of the MicroPython project, http://micropython.org/
+ *
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2016 Damien P. George on behalf of Pycom Ltd
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  */
 
 #include "sdkconfig.h"
@@ -19,7 +43,7 @@
 #include "py/mpconfig.h"
 #include "py/obj.h"
 #include "py/mphal.h"
-#include "genhdr/mpversion.h"
+#include "mpversion.h"
 #include "telnet.h"
 
 #include "esp_system.h"
@@ -45,7 +69,6 @@
 #define TELNET_TX_RETRIES_MAX               50
 #define TELNET_WAIT_TIME_MS                 10
 #define TELNET_LOGIN_RETRIES_MAX            3
-//#define TELNET_CYCLE_TIME_MS                (TELNET_CYCLE_TIME_MS * 2)
 
 #define SE 240
 #define AYT 246
@@ -63,6 +86,8 @@
 #define EDIT 1
 
 TaskHandle_t TelnetTaskHandle = NULL;
+uint32_t telnet_stack_size;
+int telnet_timeout = TELNET_DEF_TIMEOUT_MS;
 
 /******************************************************************************
  DEFINE PRIVATE TYPES
@@ -116,6 +141,7 @@ typedef struct {
 
 QueueHandle_t telnet_mutex = NULL;
 
+static uint8_t telnet_stop = 0;
 char telnet_user[TELNET_USER_PASS_LEN_MAX + 1];
 char telnet_pass[TELNET_USER_PASS_LEN_MAX + 1];
 
@@ -131,8 +157,8 @@ static const uint8_t telnet_options_pass[]  = { IAC, WILL, ECHO, IAC, WONT, SUPP
 static const uint8_t telnet_options_repl[]  = { IAC, WILL, ECHO, IAC, WILL, SUPPRESS_GO_AHEAD, IAC, WONT, LINEMODE };
 
 
-//-------------------------
-void _telnet_reset (void) {
+//--------------------------------
+static void _telnet_reset (void) {
     // close the connection and start all over again
     closesocket(telnet_data.n_sd);
     telnet_data.n_sd = -1;
@@ -384,7 +410,7 @@ static telnet_result_t telnet_recv_text_non_blocking (void *buff, int32_t Maxlen
     else if (errno != EAGAIN) {
         // error
     	printf("[Telnet] Connection terminated\n");
-        telnet_reset();
+        _telnet_reset();
         return E_TELNET_RESULT_FAILED;
     }
     return E_TELNET_RESULT_AGAIN;
@@ -443,9 +469,11 @@ static void telnet_reset_buffer (void) {
 // =======================================================
 
 //======================
-bool telnet_run (void) {
+int telnet_run (void) {
     int32_t rxLen;
-    if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return false;
+    if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return -1;
+
+    if (telnet_stop) return -2;
 
     switch (telnet_data.state) {
         case E_TELNET_STE_DISABLED:
@@ -540,17 +568,18 @@ bool telnet_run (void) {
     }
 
     if (telnet_data.state >= E_TELNET_STE_CONNECTED) {
-        if ((telnet_data.timeout + TELNET_DEF_TIMEOUT_MS) < mp_hal_ticks_ms()) {
+        if ((telnet_data.timeout + telnet_timeout) < mp_hal_ticks_ms()) {
         	if (telnet_data.state == E_TELNET_STE_LOGGED_IN) printf("[Telnet] Connection timeout, terminated\n");
             _telnet_reset();
         }
     }
     xSemaphoreGive(telnet_mutex);
-    return true;
+    return 0;
 }
 
 //-----------------------
 void telnet_init (void) {
+	telnet_stop = 0;
     // Allocate memory for the receive buffer (from the RTOS heap)
 	if (telnet_data.rxBuffer) free(telnet_data.rxBuffer);
 	memset(&telnet_data, 0, sizeof(telnet_data_t));
@@ -631,6 +660,7 @@ bool telnet_loggedin (void) {
 bool telnet_enable (void) {
 	if ((TelnetTaskHandle == NULL) || (telnet_mutex == NULL)) return false;
 	if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return false;
+	if (telnet_data.state == E_TELNET_STE_LOGGED_IN) return false;
 
 	telnet_data.enabled = true;
 	xSemaphoreGive(telnet_mutex);
@@ -642,7 +672,7 @@ bool telnet_isenabled (void) {
 	if ((TelnetTaskHandle == NULL) || (telnet_mutex == NULL)) return false;
 	if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return false;
 
-	bool res = telnet_data.enabled = true;
+	bool res = telnet_data.enabled;
 	xSemaphoreGive(telnet_mutex);
 	return res;
 }
@@ -651,7 +681,6 @@ bool telnet_isenabled (void) {
 //------------------------
 bool telnet_reset (void) {
 	if ((TelnetTaskHandle == NULL) || (telnet_mutex == NULL)) return false;
-    // close the connection and start all over again
 	if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return false;
 
 	_telnet_reset();
@@ -664,6 +693,7 @@ bool telnet_reset (void) {
 bool telnet_disable (void) {
 	if ((TelnetTaskHandle == NULL) || (telnet_mutex == NULL)) return false;
 	if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return false;
+	if (telnet_data.state == E_TELNET_STE_LOGGED_IN) return false;
 
 	_telnet_reset();
     telnet_data.enabled = false;
@@ -681,6 +711,27 @@ int telnet_getstate() {
 	int tstate = telnet_data.state;
 	xSemaphoreGive(telnet_mutex);
 	return tstate;
+}
+
+//----------------------------
+bool telnet_terminate (void) {
+	if ((TelnetTaskHandle == NULL) || (telnet_mutex == NULL)) return false;
+	if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return false;
+	if (telnet_data.state == E_TELNET_STE_LOGGED_IN) return false;
+
+	telnet_stop = 1;
+	xSemaphoreGive(telnet_mutex);
+	return true;
+}
+
+//----------------------------------
+int32_t telnet_get_maxstack (void) {
+	if ((TelnetTaskHandle == NULL) || (telnet_mutex == NULL)) return -1;
+	if (xSemaphoreTake(telnet_mutex, TELNET_MUTEX_TIMEOUT_MS / portTICK_PERIOD_MS) !=pdTRUE) return -1;
+
+	int32_t maxstack = telnet_stack_size - uxTaskGetStackHighWaterMark(TelnetTaskHandle);
+	xSemaphoreGive(telnet_mutex);
+	return maxstack;
 }
 
 

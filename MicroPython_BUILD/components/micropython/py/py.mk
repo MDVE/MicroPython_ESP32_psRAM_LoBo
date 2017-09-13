@@ -187,7 +187,6 @@ PY_O_BASENAME = \
 	../extmod/modurandom.o \
 	../extmod/moduselect.o \
 	../extmod/modwebsocket.o \
-	../extmod/modwebrepl.o \
 	../extmod/modframebuf.o \
 	../extmod/vfs.o \
 	../extmod/vfs_reader.o \

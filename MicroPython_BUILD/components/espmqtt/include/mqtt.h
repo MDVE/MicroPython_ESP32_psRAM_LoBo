@@ -185,6 +185,7 @@ typedef struct mqtt_client {
   char *name;
 } mqtt_client;
 
+const char *MQTT_TAG;
 
 int mqtt_start(mqtt_client *client);
 void mqtt_stop(mqtt_client* client);
