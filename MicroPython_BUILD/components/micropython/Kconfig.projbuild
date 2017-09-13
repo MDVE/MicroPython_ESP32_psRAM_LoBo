@@ -68,7 +68,7 @@ menu "MicroPython"
 	        int "MicroPython stack size (KB)"
 	        range 8 32 if !MEMMAP_SPIRAM_ENABLE
 	        range 8 64 if MEMMAP_SPIRAM_ENABLE
-	        default 16 if !MEMMAP_SPIRAM_ENABLE
+	        default 20 if !MEMMAP_SPIRAM_ENABLE
 	        default 32 if MEMMAP_SPIRAM_ENABLE
 	        help
 	        Set the size of the MicroPython stack in Kbytes
