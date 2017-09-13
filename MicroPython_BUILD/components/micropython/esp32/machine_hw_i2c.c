@@ -193,6 +193,7 @@ STATIC const mp_arg_t machine_hw_i2c_init_allowed_args[] = {
 		{ MP_QSTR_id,                      MP_ARG_INT, {.u_int = 0} },
 		{ MP_QSTR_mode,                    MP_ARG_INT, {.u_int = I2C_MODE_MASTER} },
 		{ MP_QSTR_speed, MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = 100000} },
+		{ MP_QSTR_freq,  MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = -1} },
 		{ MP_QSTR_sda,   MP_ARG_KW_ONLY  | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
 		{ MP_QSTR_scl,   MP_ARG_KW_ONLY  | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
 };
@@ -200,7 +201,7 @@ STATIC const mp_arg_t machine_hw_i2c_init_allowed_args[] = {
 //---------------------------------------------------------------------------------------------------------------
 mp_obj_t machine_hw_i2c_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
-	enum { ARG_id, ARG_mode, ARG_speed, ARG_sda, ARG_scl };
+	enum { ARG_id, ARG_mode, ARG_speed, ARG_freq, ARG_sda, ARG_scl };
 
 	mp_arg_val_t args[MP_ARRAY_SIZE(machine_hw_i2c_init_allowed_args)];
 	mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(machine_hw_i2c_init_allowed_args), machine_hw_i2c_init_allowed_args, args);
@@ -208,7 +209,9 @@ mp_obj_t machine_hw_i2c_make_new(const mp_obj_type_t *type, size_t n_args, size_
     int8_t sda;
     int8_t scl;
     int8_t bus_id = args[ARG_id].u_int;
-    uint32_t speed = args[ARG_speed].u_int;;
+    uint32_t speed;
+    if (args[ARG_freq].u_int > 0) speed = args[ARG_freq].u_int;
+    else speed = args[ARG_speed].u_int;
 
     // Check the peripheral id
     if (bus_id < 0 || bus_id > 1) {
@@ -247,7 +250,7 @@ mp_obj_t machine_hw_i2c_make_new(const mp_obj_type_t *type, size_t n_args, size_
 STATIC mp_obj_t machine_hw_i2c_init(mp_uint_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args)
 {
     machine_hw_i2c_obj_t *self = pos_args[0];
-	enum { ARG_id, ARG_mode, ARG_speed, ARG_sda, ARG_scl };
+	enum { ARG_id, ARG_mode, ARG_speed, ARG_freq, ARG_sda, ARG_scl };
 
 	mp_arg_val_t args[MP_ARRAY_SIZE(machine_hw_i2c_init_allowed_args)];
     mp_arg_parse_all(n_args-1, pos_args+1, kw_args, MP_ARRAY_SIZE(machine_hw_i2c_init_allowed_args), machine_hw_i2c_init_allowed_args, args);
@@ -255,7 +258,9 @@ STATIC mp_obj_t machine_hw_i2c_init(mp_uint_t n_args, const mp_obj_t *pos_args, 
     int8_t sda;
     int8_t scl;
     int8_t bus_id = args[ARG_id].u_int;
-    uint32_t speed = args[ARG_speed].u_int;;
+    uint32_t speed;
+    if (args[ARG_freq].u_int > 0) speed = args[ARG_freq].u_int;
+    else speed = args[ARG_speed].u_int;
     uint8_t changed = 0;
 
     // Check the peripheral id

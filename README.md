@@ -24,6 +24,8 @@ AnalogLamb is also offering [ALB32-WROVER](https://www.analoglamb.com/product/al
 
 Some basic [documentation](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/blob/master/MicroPython_BUILD/components/micropython/docs/README.md) specific to this **MicroPython** port is available. It will soon be updated to include the documentation for all added/changed modules.
 
+Some examples can be found in [modules_examples](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/tree/master/MicroPython_BUILD/components/micropython/esp32/modules_examples) directory.
+
 ---
 
 This repository contains all the tools and sources necessary to **build working MicroPython firmware** which can fully use the advantages of **4MB** (or more) of **psRAM**
