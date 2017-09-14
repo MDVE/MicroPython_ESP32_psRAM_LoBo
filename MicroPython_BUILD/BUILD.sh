@@ -15,6 +15,7 @@
 # ./BUILD monitor       - run esp-idf terminal program
 
 
+TOOLS_VER=ver20170914.id
 
 #---------------------------------------------------------------------------------------------------------------------
 # Check parameters
@@ -94,12 +95,80 @@ if [ "${arg}" == "" ]; then
 fi
 #---------------------------------------------------------------------------------------------------------------------
 
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)     machine=Linux;;
+    Darwin*)    machine=MacOS;;
+    CYGWIN*)    machine=Cygwin;;
+    MINGW*)     machine=MinGw;;
+    *)          machine="UNKNOWN:${unameOut}"
+esac
 
 BUILD_BASE_DIR=${PWD}
 
-# Test if toolchains are unpacked
-# #########################################################
-cd ..
+# #################################################
+# Test if toolchains are unpacked and right version
+# #################################################
+cd ../
+
+# Remove directories from previous version
+if [ -d "esp-idf" ]; then
+    rm -rf esp-idf/ > /dev/null 2>&1
+    rmdir esp-idf > /dev/null 2>&1
+fi
+if [ -d "esp-idf_psram" ]; then
+    rm -rf esp-idf_psram/ > /dev/null 2>&1
+    rmdir esp-idf_psram > /dev/null 2>&1
+fi
+if [ -d "xtensa-esp32-elf" ]; then
+    rm -rf xtensa-esp32-elf/ > /dev/null 2>&1
+    rmdir xtensa-esp32-elf > /dev/null 2>&1
+fi
+if [ -d "xtensa-esp32-elf_psram" ]; then
+    rm -rf xtensa-esp32-elf_psram/ > /dev/null 2>&1
+    rmdir xtensa-esp32-elf_psram > /dev/null 2>&1
+fi
+
+
+cd Tools
+
+# Check version
+if [ ! -f "${TOOLS_VER}" ]; then
+    echo "Removing old tools versions and cleaning build..."
+    # Remove directories from previous version
+    if [ -d "esp-idf" ]; then
+        rm -rf esp-idf/
+        rmdir esp-idf
+    fi
+    if [ -d "esp-idf_psram" ]; then
+        rm -rf esp-idf_psram/ > /dev/null 2>&1
+        rmdir esp-idf_psram > /dev/null 2>&1
+    fi
+    if [ -d "xtensa-esp32-elf" ]; then
+        rm -rf xtensa-esp32-elf/ > /dev/null 2>&1
+        rmdir xtensa-esp32-elf > /dev/null 2>&1
+    fi
+    if [ -d "xtensa-esp32-elf_psram" ]; then
+        rm -rf xtensa-esp32-elf_psram/ > /dev/null 2>&1
+        rmdir xtensa-esp32-elf_psram > /dev/null 2>&1
+    fi
+    rm -f *.id > /dev/null 2>&1
+    touch ${TOOLS_VER}
+    echo "toolchains & esp-idf version" > ${TOOLS_VER}
+    # remove executables
+    rm -f ${BUILD_BASE_DIR}/components/mpy_cross_build/mpy-cross/mpy-cross > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/mpy_cross_build/mpy-cross/mpy-cross.exe > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/micropython/mpy-cross/mpy-cross > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/micropython/mpy-cross/mpy-cross.exe > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/mkspiffs/src/mkspiffs > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/mkspiffs/src/mkspiffs.exe > /dev/null 2>&1
+    # remove build directory and configs
+    rm -f ${BUILD_BASE_DIR}/sdkconfig > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/sdkconfig.old > /dev/null 2>&1
+    rm -rf ${BUILD_BASE_DIR}/build/* > /dev/null 2>&1
+    rmdir ${BUILD_BASE_DIR}/build > /dev/null 2>&1
+fi
+
 if [ ! -d "esp-idf" ]; then
     echo "unpacking 'esp-idf'"
     tar -xf esp-idf.tar.xz > /dev/null 2>&1
@@ -118,7 +187,7 @@ if [ ! -d "esp-idf_psram" ]; then
 fi
 if [ ! -d "xtensa-esp32-elf" ]; then
     echo "unpacking 'xtensa-esp32-elf'"
-    tar -xf xtensa-esp32-elf.tar.xz > /dev/null 2>&1
+    tar -xf ${machine}/xtensa-esp32-elf.tar.xz > /dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo "unpacking 'xtensa-esp32-elf' FAILED"
         exit 1
@@ -126,12 +195,13 @@ if [ ! -d "xtensa-esp32-elf" ]; then
 fi
 if [ ! -d "xtensa-esp32-elf_psram" ]; then
     echo "unpacking 'xtensa-esp32-elf_psram'"
-    tar -xf xtensa-esp32-elf_psram.tar.xz > /dev/null 2>&1
+    tar -xf ${machine}/xtensa-esp32-elf_psram.tar.xz > /dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo "unpacking 'xtensa-esp32-elf_psram' FAILED"
         exit 1
     fi
 fi
+
 cd ${BUILD_BASE_DIR}
 # #########################################################
 
@@ -190,40 +260,25 @@ fi
 # ########################################################
 if [ "${buildType}" == "psram" ]; then
     cd ../
-    # Add Xtensa toolchain path to system path
-    export PATH=${PWD}/xtensa-esp32-elf_psram/bin:$PATH
+    # Add Xtensa toolchain path to system path, and export path to esp-idf
+    export PATH=${PWD}/Tools/xtensa-esp32-elf_psram/bin:$PATH
     # Export esp-idf path
-    export IDF_PATH=${PWD}/esp-idf_psram
+    export IDF_PATH=${PWD}/Tools/esp-idf_psram
 
-    cd ${BUILD_BASE_DIR}
     echo ""
     echo "Building MicroPython for ESP32 with esp-idf psRAM branch"
     echo ""
 else
     cd ../
-
     # Add Xtensa toolchain path to system path, and export path to esp-idf
+    export PATH=${PWD}/Tools/xtensa-esp32-elf/bin:$PATH
+    export IDF_PATH=${PWD}/Tools/esp-idf
 
-    # #####################################################################
-    # For non-psRAM builds, master or release branch of esp-idf can be used
-    #                       standard extenssa ESP32 toolchain can be used
-    # ---------------------------------------------------------------------
-    # export YOUR OWN PATHS, or use included
-    # ---------------------------------------------------------------------
-    #
-    #export PATH=<path_to_my_xtensa_tooolchain>/xtensa-esp32-elf/bin:$PATH
-    #export IDF_PATH=<path_to_my_esp-idf>/esp-idf
-    #
-    # ############################################################
-
-    export PATH=${PWD}/xtensa-esp32-elf/bin:$PATH
-    export IDF_PATH=${PWD}/esp-idf
-
-    cd ${BUILD_BASE_DIR}
     echo ""
     echo "Building MicroPython for ESP32 with esp-idf master branch"
     echo ""
 fi
+cd ${BUILD_BASE_DIR}
 
 export HOST_PLATFORM=linux
 export CROSS_COMPILE=xtensa-esp32-elf-

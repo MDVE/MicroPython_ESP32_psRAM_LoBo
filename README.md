@@ -6,7 +6,7 @@
 
 **This repository can be used to build MicroPython for modules with psRAM as well as for regular ESP32 modules without psRAM.**
 
-For building with **psRAM** support, special wersions of *esp-idf* and *Xtensa toolchain* are needed (included). Otherwise, standard (master or release) *esp-idf* and toolchain can be used (included).
+For building with **psRAM** support, special versions of *esp-idf* and *Xtensa toolchain* are needed (included). Otherwise, standard (master or release) *esp-idf* and toolchain can be used (included).
 
 ---
 

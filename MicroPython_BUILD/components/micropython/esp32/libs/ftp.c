@@ -611,12 +611,12 @@ static void ftp_fix_path(char *pwd) {
 
     // Convert to physical path
 	if (strstr(pwd, VFS_NATIVE_INTERNAL_MP) == pwd) {
-		sprintf(ph_path, "%s%s", VFS_NATIVE_MOUNT_POINT, pwd+strlen(VFS_NATIVE_MOUNT_POINT));
+		sprintf(ph_path, "%s%s", VFS_NATIVE_MOUNT_POINT, pwd+strlen(VFS_NATIVE_INTERNAL_MP));
 		if (strcmp(ph_path, VFS_NATIVE_MOUNT_POINT) == 0) strcat(ph_path, "/");
 		strcpy(pwd, ph_path);
 	}
 	else if (strstr(pwd, VFS_NATIVE_EXTERNAL_MP) == pwd) {
-		sprintf(ph_path, "%s%s", VFS_NATIVE_SDCARD_MOUNT_POINT, pwd+strlen(VFS_NATIVE_SDCARD_MOUNT_POINT));
+		sprintf(ph_path, "%s%s", VFS_NATIVE_SDCARD_MOUNT_POINT, pwd+strlen(VFS_NATIVE_EXTERNAL_MP));
 		if (strcmp(ph_path, VFS_NATIVE_SDCARD_MOUNT_POINT) == 0) strcat(ph_path, "/");
 		strcpy(pwd, ph_path);
 	}
