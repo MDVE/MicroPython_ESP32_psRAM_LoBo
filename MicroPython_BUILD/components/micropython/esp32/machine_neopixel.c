@@ -42,7 +42,8 @@
 
 typedef struct _machine_neopixel_obj_t {
     mp_obj_base_t base;
-    rmt_config_t config;
+    rmt_channel_t channel;
+    int gpio_num;
     pixel_settings_t px;
 } machine_neopixel_obj_t;
 
@@ -50,7 +51,7 @@ typedef struct _machine_neopixel_obj_t {
 //------------------------------------------------
 STATIC void np_check(machine_neopixel_obj_t *self)
 {
-    if ((self->px.pixels == NULL) || (self->px.items == NULL)) {
+    if (self->px.pixels == NULL) {
         nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError, "Neopixel instance not initialized"));
     }
 }
@@ -60,10 +61,8 @@ STATIC void machine_neopixel_print(const mp_print_t *print, mp_obj_t self_in, mp
 {
     machine_neopixel_obj_t *self = self_in;
 
-    if ((self->px.pixels != NULL) && (self->px.items != NULL)) {
-		mp_printf(print, "Neopixel(Pin=%d, Pixels: %d, RMTChannel=%d, PixBufLen=%u, BitBufLen=%u\n",
-				self->config.gpio_num, self->px.pixel_count, self->config.channel,
-				sizeof(pixel_t) * self->px.pixel_count, sizeof(rmt_item32_t) * ((self->px.pixel_count * 32) + 1));
+    if (self->px.pixels != NULL) {
+		mp_printf(print, "Neopixel(Pin=%d, Pixels: %d, RMTChannel=%d, PixBufLen=%u\n", self->gpio_num, self->px.pixel_count, self->channel, sizeof(pixel_t) * self->px.pixel_count);
 		mp_printf(print, "         Timings ns: BIT1: (%d, %d, %d, %d), BIT0: (%d, %d, %d, %d), RST: %d\n         )",
 				self->px.timings.mark.level0, self->px.timings.mark.duration0 * RMT_PERIOD_NS, self->px.timings.mark.level1, self->px.timings.mark.duration1 * RMT_PERIOD_NS,
 				self->px.timings.space.level0, self->px.timings.space.duration0 * RMT_PERIOD_NS, self->px.timings.space.level1, self->px.timings.space.duration1 * RMT_PERIOD_NS,
@@ -78,12 +77,12 @@ STATIC void machine_neopixel_print(const mp_print_t *print, mp_obj_t self_in, mp
 STATIC mp_obj_t machine_neopixel_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
 	enum { ARG_pin, ARG_pixels, ARG_type, ARG_rmtchan };
-	//------------------------------------------------------------
+	//-----------------------------------------------------
 	const mp_arg_t machine_neopixel_init_allowed_args[] = {
 			{ MP_QSTR_pin,     MP_ARG_REQUIRED | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
 			{ MP_QSTR_pixels,  MP_ARG_REQUIRED | MP_ARG_INT, {.u_int = 4} },
 			{ MP_QSTR_type,                      MP_ARG_INT, {.u_int = 0} },
-			{ MP_QSTR_rmtchan, MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = 0} },
+			{ MP_QSTR_rmtchan, MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = RMT_CHANNEL_0} },
 	};
 
 	mp_arg_val_t args[MP_ARRAY_SIZE(machine_neopixel_init_allowed_args)];
@@ -107,8 +106,8 @@ STATIC mp_obj_t machine_neopixel_make_new(const mp_obj_type_t *type, size_t n_ar
     	mp_raise_ValueError("Wrong pin, only pins 0~31 allowed");
     }
     // Check number of pixels
-    if ((pixels < 0) || (pixels > 255)) {
-    	mp_raise_ValueError("Maximum 255 pixels can be used");
+    if ((pixels < 0) || (pixels > 1024)) {
+    	mp_raise_ValueError("Maximum 1024 pixels can be used");
     }
 
     // Setup the neopixels object
@@ -116,28 +115,19 @@ STATIC mp_obj_t machine_neopixel_make_new(const mp_obj_type_t *type, size_t n_ar
 
     pixel_settings_t px = NEOPIXEL_INIT_CONFIG_DEFAULT;
     pixel_timing_t timings = DEFAULT_WS2812_TIMINGS;
-    rmt_config_t cfg = NEOPIXEL_RMT_INIT_CONFIG_DEFAULT;
 
     memcpy(&self->px, &px, sizeof(pixel_settings_t));
     memcpy(&self->px.timings, &timings, sizeof(pixel_timing_t));
-    memcpy(&self->config, &cfg, sizeof(rmt_config_t));
 
     self->px.pixel_count = pixels;
-    self->config.channel = RMT_CHANNEL_0;
-    self->config.gpio_num = pin;
+    self->channel = rmtchan;
+    self->gpio_num = pin;
 
     // Allocate buffers
     self->px.pixels = m_new(pixel_t, sizeof(pixel_t) * self->px.pixel_count);
-    //self->px.pixels = malloc(sizeof(pixel_t) * self->px.pixel_count);
     if (self->px.pixels == NULL) goto error_exit;
-    self->px.items = m_new(rmt_item32_t, sizeof(rmt_item32_t) * ((self->px.pixel_count * 32) + 1));
-    //self->px.items = malloc(sizeof(rmt_item32_t) * ((self->px.pixel_count * 32) + 1));
-    if (self->px.items == NULL) goto error_exit;
 
-    esp_err_t res = rmt_config(&self->config);
-    if (res != ESP_OK) goto error_exit;
-	res = rmt_driver_install(self->config.channel, 0, 0);
-    if (res != ESP_OK) goto error_exit;
+    neopixel_init(pin, rmtchan);
 
     self->base.type = &machine_neopixel_type;
 
@@ -148,11 +138,9 @@ STATIC mp_obj_t machine_neopixel_make_new(const mp_obj_type_t *type, size_t n_ar
 
 error_exit:
 	if (self->px.pixels) m_del(pixel_t, self->px.pixels, 1);
-	if (self->px.items) m_del(rmt_item32_t, self->px.items, 1);
 	//if (self->px.pixels) free(self->px.pixels);
 	//if (self->px.items) free(self->px.items);
 	self->px.pixels = NULL;
-	self->px.items = NULL;
 
     nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError, "Error initializing Neopixel interface"));
 	return mp_const_none;
@@ -168,15 +156,8 @@ STATIC mp_obj_t machine_neopixel_deinit(mp_obj_t self_in)
 	np_show(&self->px);
 
 	if (self->px.pixels) m_del(pixel_t, self->px.pixels, 1);
-    if (self->px.items) m_del(rmt_item32_t, self->px.items, 1);
-	//if (self->px.pixels) free(self->px.pixels);
-    //if (self->px.items) free(self->px.items);
-    rmt_driver_uninstall(self->config.channel);
-
-    pixel_settings_t px = NEOPIXEL_INIT_CONFIG_DEFAULT;
-    memcpy(&self->px, &px, sizeof(pixel_settings_t));
-    rmt_config_t cfg = NEOPIXEL_RMT_INIT_CONFIG_DEFAULT;
-    memcpy(&self->config, &cfg, sizeof(rmt_config_t));
+    self->px.pixels = NULL;
+    neopixel_deinit(self->channel);
 
     return mp_const_none;
 }

@@ -55,13 +55,13 @@ def rgbled(n=200, led=bled):
         gc.collect()
 
 # For LED thread we don't need more than 3K stack
-_thread.stack_size(3*1024)
+_ = _thread.stack_size(3*1024)
 # Start LED thread
-bth=_thread.start_new_thread("R_Led", rgbled, (100, rled))
+#rth=_thread.start_new_thread("R_Led", rgbled, (100, rled))
 
 time.sleep_ms(500)
 #gth=_thread.start_new_thread("G_Led", rgbled, (250, gled))
-#rth=_thread.start_new_thread("B_Led", rgbled, (100, bled))
+bth=_thread.start_new_thread("B_Led", rgbled, (100, bled))
 
 # Function to generate BME280 values string
 #---------------
@@ -103,7 +103,7 @@ def bmerun(interval=60):
             _thread.sendmsg(_thread.getReplID(), bmevalues())
 
 # 3K is enough for BME280 thread
-_thread.stack_size(3*1024)
+_ = _thread.stack_size(3*1024)
 # start the BME280 thread
 bmeth=_thread.start_new_thread("BME280", bmerun, (60,))
 
@@ -137,4 +137,9 @@ utime.sleep(1)
 
 machine.heap_info()
 _thread.list()
+
+# Set neopixel brightnes (%)
+#_thread.notify(npth, 20)
+# Get counter value from Neopixel thread
+#_thread.notify(npth, 1000)
 

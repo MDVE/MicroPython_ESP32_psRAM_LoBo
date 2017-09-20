@@ -33,11 +33,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#if IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_task.h"
@@ -172,7 +168,7 @@ soft_reset:
     fflush(stdout);
     goto soft_reset;
 }
-#include "libs/neopixel.h"
+
 //============================
 void micropython_entry(void) {
     nvs_flash_init();
@@ -180,6 +176,8 @@ void micropython_entry(void) {
     // === Set esp32 log levels while running MicroPython ===
 	esp_log_level_set("*", CONFIG_MICRO_PY_LOG_LEVEL);
 	esp_log_level_set("wifi", 1);
+	esp_log_level_set("rmt", 1);
+
 	#ifdef CONFIG_MICROPY_USE_MQTT
 	esp_log_level_set(MQTT_TAG, CONFIG_MQTT_LOG_LEVEL);
 	#endif
@@ -195,14 +193,14 @@ void micropython_entry(void) {
     printf("\nuPY stack size = %d bytes\n", MP_TASK_STACK_LEN-1024);
 
     // ==== Allocate heap memory ====
-    #if CONFIG_MEMMAP_SPIRAM_ENABLE
+    #if CONFIG_SPIRAM_SUPPORT
 		// ## USING SPI RAM FOR HEAP ##
-		#if !CONFIG_MEMMAP_SPIRAM_ENABLE_MALLOC
-		printf("uPY  heap size = %d bytes (in SPIRAM using pvPortMallocCaps)\n\n", MP_TASK_HEAP_SIZE);
-		mp_task_heap = pvPortMallocCaps(MP_TASK_HEAP_SIZE, MALLOC_CAP_SPIRAM);
-		#else
-		printf("uPY  heap size = %d bytes (in SPIRAM using malloc)\n\n", MP_TASK_HEAP_SIZE);
-		mp_task_heap = malloc(MP_TASK_HEAP_SIZE);
+		#if CONFIG_SPIRAM_USE_CAPS_ALLOC
+		printf("uPY  heap size = %d bytes (in SPIRAM using heap_caps_malloc)\n\n", MP_TASK_HEAP_SIZE);
+		mp_task_heap = heap_caps_malloc(MP_TASK_HEAP_SIZE, MALLOC_CAP_SPIRAM);
+		#else SPIRAM_USE_MEMMAP == y
+		printf("uPY  heap size = %d bytes (in SPIRAM using MEMMAP)\n\n", MP_TASK_HEAP_SIZE);
+		mp_task_heap = (uint8_t *)0x3f800000;
 		#endif
     #else
 		// ## USING DRAM FOR HEAP ##

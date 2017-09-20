@@ -40,11 +40,7 @@
 #include "soc/rtc_cntl_reg.h"
 #include "rom/uart.h"
 #include "esp_deep_sleep.h"
-#ifdef IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 
 #include "py/obj.h"
 #include "py/runtime.h"
@@ -122,15 +118,15 @@ STATIC mp_obj_t machine_heap_info(void) {
 	uint32_t total = xPortGetFreeHeapSize();
 	uint32_t psRAM = 0;
 
-	#if CONFIG_MEMMAP_SPIRAM_ENABLE
-		#ifdef IDF_USEHEAP
-		psRAM = heap_caps_get_free_size(MALLOC_CAP_SPISRAM);
+	#if CONFIG_SPIRAM_SUPPORT
+		#if CONFIG_SPIRAM_USE_CAPS_ALLOC
+		psRAM = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 		#else
-		psRAM = xPortGetFreeHeapSizeCaps(MALLOC_CAP_SPIRAM);
+		psRAM = CONFIG_SPIRAM_SIZE - (CONFIG_MICROPY_HEAP_SIZE * 1024);
 		#endif
 	#endif
 
-    mp_printf(&mp_plat_print, "Free heap outside of MicroPython heap:\n total=%u, SPI SRAM=%u, DRAM=%u\n", total, psRAM, total - psRAM);
+    mp_printf(&mp_plat_print, "Free heap outside of MicroPython heap:\n total=%u, SPISRAM=%u, DRAM=%u\n", total, psRAM, total - psRAM);
 
     return mp_const_none;
 }
@@ -150,8 +146,8 @@ STATIC mp_obj_t machine_deepsleep(size_t n_args, const mp_obj_t *pos_args, mp_ma
 
     mp_int_t expiry = args[ARG_sleep_ms].u_int;
 
-    if (expiry != 0) {
-        esp_deep_sleep_enable_timer_wakeup(expiry * 1000);
+    if (expiry > 0) {
+        esp_deep_sleep_enable_timer_wakeup((uint64_t)(expiry * 1000));
     }
 
     if (machine_rtc_config.ext0_pin != -1) {
@@ -180,7 +176,8 @@ STATIC mp_obj_t machine_deepsleep(size_t n_args, const mp_obj_t *pos_args, mp_ma
     mp_deinit();
     fflush(stdout);
 
-    esp_deep_sleep_start();
+    esp_deep_sleep_start();  // This function does not return.
+
     return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_KW(machine_deepsleep_obj, 0,  machine_deepsleep);

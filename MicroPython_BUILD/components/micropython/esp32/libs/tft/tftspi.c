@@ -38,11 +38,7 @@
 #include "tftspi.h"
 #include "esp_system.h"
 #include "freertos/task.h"
-#if IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 #include "soc/spi_reg.h"
 
 
@@ -68,19 +64,18 @@ spi_lobo_device_handle_t ts_spi = NULL;
 int8_t  pin_bckl = -1;
 uint8_t bckl_on = 0;
 int8_t  pin_rst = -1;
-
+uint8_t pin_dc = PIN_NUM_DC;
 uint8_t _invert_rot = 0;	// set to 0, 1, 2 (for example the display on WROVER-KIT v3 requires 2)
 uint8_t _rgb_bgr = 0;		// set to 0 for RGB, to 8 for BGR display matrix
 
 // ====================================================
 
-
+static uint32_t dc_pinbit = 1;
 static color_t *trans_cline = NULL;
 static uint8_t _dma_sending = 0;
 
-#define DC_VAL (1 << PIN_NUM_DC)
-#define DC_CMD	GPIO.out_w1tc = (DC_VAL)
-#define DC_DATA	GPIO.out_w1ts = (DC_VAL)
+#define DC_CMD	GPIO.out_w1tc = dc_pinbit
+#define DC_DATA	GPIO.out_w1ts = dc_pinbit
 
 // RGB to GRAYSCALE constants
 // 0.2989  0.5870  0.1140
@@ -170,11 +165,10 @@ void IRAM_ATTR disp_spi_transfer_cmd_data(int8_t cmd, uint8_t *data, uint32_t le
     disp_spi->host->hw->data_buf[0] = (uint32_t)cmd;
     disp_spi_transfer_start(8);
 
-	if (len == 0) return;
+	if ((len == 0) || (data == NULL)) return;
 
     // Set DC to 1 (data mode);
 	DC_DATA;
-    //GPIO.out_w1ts = (1 << PIN_NUM_DC);
 
 	uint8_t idx=0, bidx=0;
 	uint32_t bits=0;
@@ -445,11 +439,7 @@ static void IRAM_ATTR _TFT_pushColorRep(color_t *color, uint32_t len, uint8_t re
 		buf_bytes = buf_colors * 3;
 
 		// Prepare color buffer of maximum 2 color lines
-		#if IDF_USEHEAP
 		trans_cline = heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA);
-		#else
-		trans_cline = pvPortMallocCaps(buf_bytes, MALLOC_CAP_DMA);
-		#endif
 		if (trans_cline == NULL) return;
 
 		// Prepare fill color
@@ -474,16 +464,21 @@ static void IRAM_ATTR _TFT_pushColorRep(color_t *color, uint32_t len, uint8_t re
 }
 
 // Write 'len' color data to TFT 'window' (x1,y2),(x2,y2)
-//-------------------------------------------------------------------------------------------
-void IRAM_ATTR TFT_pushColorRep(int x1, int y1, int x2, int y2, color_t color, uint32_t len)
+//-----------------------------------------------------------------------------------------------
+void IRAM_ATTR TFT_pushColorRep_nocs(int x1, int y1, int x2, int y2, color_t color, uint32_t len)
 {
-	if (disp_select() != ESP_OK) return;
-
 	// ** Send address window **
 	disp_spi_transfer_addrwin(x1, x2, y1, y2);
 
 	_TFT_pushColorRep(&color, len, 1, 1);
+}
 
+// Write 'len' color data to TFT 'window' (x1,y2),(x2,y2)
+//-------------------------------------------------------------------------------------------
+void IRAM_ATTR TFT_pushColorRep(int x1, int y1, int x2, int y2, color_t color, uint32_t len)
+{
+	if (disp_select() != ESP_OK) return;
+	TFT_pushColorRep_nocs(x1, y1, x2, y2, color, len);
 	disp_deselect();
 }
 
@@ -597,18 +592,10 @@ uint32_t find_rd_speed()
     gray_scale = 0;
     cur_speed = spi_lobo_get_speed(disp_spi);
 
-	#if IDF_USEHEAP
     color_line = heap_caps_malloc(_width*3, MALLOC_CAP_DMA);
-	#else
-	color_line = pvPortMallocCaps(_width*3, MALLOC_CAP_DMA);
-	#endif
     if (color_line == NULL) goto exit;
 
-	#if IDF_USEHEAP
     line_rdbuf = heap_caps_malloc((_width*3)+1, MALLOC_CAP_DMA);
-	#else
-    line_rdbuf = pvPortMallocCaps((_width*3)+1, MALLOC_CAP_DMA);
-	#endif
 	if (line_rdbuf == NULL) goto exit;
 
 	color_t *rdline = (color_t *)(line_rdbuf+1);
@@ -666,26 +653,26 @@ exit:
 // Reads and issues a series of LCD commands stored in byte array
 //---------------------------------------------------------------------------
 static void commandList(spi_lobo_device_handle_t spi, const uint8_t *addr) {
-  uint8_t  numCommands, numArgs, cmd;
-  uint16_t ms;
+	uint8_t  numCommands, numArgs, cmd;
+	uint16_t ms;
 
-  numCommands = *addr++;				// Number of commands to follow
-  while(numCommands--) {				// For each command...
-    cmd = *addr++;						// save command
-    numArgs  = *addr++;					// Number of args to follow
-    ms       = numArgs & TFT_CMD_DELAY;	// If high bit set, delay follows args
-    numArgs &= ~TFT_CMD_DELAY;			// Mask out delay bit
+	numCommands = *addr++;					// Number of commands to follow
+	while (numCommands--) {					// For each command...
+		cmd = *addr++;						// save command
+		numArgs  = *addr++;					// Number of args to follow
+		ms       = numArgs & TFT_CMD_DELAY;	// If high bit set, delay follows args
+		numArgs &= ~TFT_CMD_DELAY;			// Mask out delay bit
 
-	disp_spi_transfer_cmd_data(cmd, (uint8_t *)addr, numArgs);
+		disp_spi_transfer_cmd_data(cmd, (uint8_t *)addr, numArgs);
 
-	addr += numArgs;
+		addr += numArgs;
 
-    if(ms) {
-      ms = *addr++;              // Read post-command delay time (ms)
-      if(ms == 255) ms = 500;    // If 255, delay for 500 ms
-	  vTaskDelay(ms / portTICK_RATE_MS);
-    }
-  }
+		if (ms) {
+		ms = *addr++;						// Read post-command delay time (ms)
+		if(ms == 255) ms = 500;    			// If 255, delay for 500 ms
+			vTaskDelay(ms / portTICK_RATE_MS);
+		}
+	}
 }
 
 //==================================
@@ -787,8 +774,9 @@ void bcklOn() {
 // ====================
 void TFT_display_init()
 {
+	dc_pinbit = (uint32_t)(1 << pin_dc);
      //Initialize non-SPI GPIOs
-    gpio_set_direction(PIN_NUM_DC, GPIO_MODE_OUTPUT);
+    gpio_set_direction(pin_dc, GPIO_MODE_OUTPUT);
 
     bcklOff();
 
@@ -817,6 +805,22 @@ void TFT_display_init()
 	}
 	else if (tft_disp_type == DISP_TYPE_ST7789V) {
 		commandList(disp_spi, ST7789V_init);
+	}
+	else if (tft_disp_type == DISP_TYPE_ST7735) {
+		commandList(disp_spi, STP7735_init);
+	}
+	else if (tft_disp_type == DISP_TYPE_ST7735R) {
+		commandList(disp_spi, STP7735R_init);
+		commandList(disp_spi, Rcmd2green);
+		commandList(disp_spi, Rcmd3);
+	}
+	else if (tft_disp_type == DISP_TYPE_ST7735B) {
+		commandList(disp_spi, STP7735R_init);
+		commandList(disp_spi, Rcmd2red);
+		commandList(disp_spi, Rcmd3);
+	    uint8_t dt = 0xC0;
+		disp_select();
+		disp_spi_transfer_cmd_data(TFT_MADCTL, &dt, 1);
 	}
 
     disp_deselect();

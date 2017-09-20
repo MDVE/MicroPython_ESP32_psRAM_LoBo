@@ -68,7 +68,7 @@ STATIC mp_obj_t madc_make_new(const mp_obj_type_t *type, size_t n_args, size_t n
     for (int i = 0; i < MP_ARRAY_SIZE(madc_obj); i++) {
         if (pin_id == madc_obj[i].gpio_id) { self = &madc_obj[i]; break; }
     }
-    if (!self) nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "invalid Pin for ADC"));
+    if (!self) mp_raise_ValueError("invalid Pin for ADC");
     esp_err_t err = adc1_config_channel_atten(self->adc1_id, ADC_ATTEN_0db);
     if (err == ESP_OK) return MP_OBJ_FROM_PTR(self);
     mp_raise_ValueError("Parameter Error");
@@ -81,7 +81,7 @@ STATIC void madc_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_
 
 STATIC mp_obj_t madc_read(mp_obj_t self_in) {
     madc_obj_t *self = self_in;
-    int val = adc1_get_voltage(self->adc1_id);
+    int val = adc1_get_raw(self->adc1_id);
     if (val == -1) mp_raise_ValueError("Parameter Error");
     return MP_OBJ_NEW_SMALL_INT(val);
 }

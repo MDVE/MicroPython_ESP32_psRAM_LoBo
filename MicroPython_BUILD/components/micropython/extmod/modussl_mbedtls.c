@@ -30,12 +30,12 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
-#include <string.h>
+#include <errno.h> // needed because mp_is_nonblocking_error uses system error codes
 
 #include "py/nlr.h"
 #include "py/runtime.h"
 #include "py/stream.h"
+#include "py/obj.h"
 
 #include "sdkconfig.h"
 
@@ -76,9 +76,14 @@ static void mbedtls_debug(void *ctx, int level, const char *file, int line, cons
     printf("DBG:%s:%04d: %s\n", file, line, str);
 }
 
+// TODO: FIXME!
+int null_entropy_func(void *data, unsigned char *output, size_t len) {
+    // enjoy random bytes
+    return 0;
+}
+
 int _mbedtls_ssl_send(void *ctx, const byte *buf, size_t len) {
-    mp_obj_ssl_socket_t *o = (mp_obj_ssl_socket_t*)ctx;
-    mp_obj_t sock = o->sock;
+    mp_obj_t sock = *(mp_obj_t*)ctx;
 
     const mp_stream_p_t *sock_stream = mp_get_stream_raise(sock, MP_STREAM_OP_WRITE);
     int err;
@@ -89,40 +94,28 @@ int _mbedtls_ssl_send(void *ctx, const byte *buf, size_t len) {
             return MBEDTLS_ERR_SSL_WANT_WRITE;
         }
         return -err;
+    } else {
+        return out_sz;
     }
-    return out_sz;
 }
 
 int _mbedtls_ssl_recv(void *ctx, byte *buf, size_t len) {
-    mp_obj_ssl_socket_t *o = (mp_obj_ssl_socket_t*)ctx;
-    mp_obj_t sock = o->sock;
+    mp_obj_t sock = *(mp_obj_t*)ctx;
 
     const mp_stream_p_t *sock_stream = mp_get_stream_raise(sock, MP_STREAM_OP_READ);
     int err;
+
     int out_sz = sock_stream->read(sock, buf, len, &err);
     if (out_sz == MP_STREAM_ERROR) {
         if (mp_is_nonblocking_error(err)) {
             return MBEDTLS_ERR_SSL_WANT_READ;
         }
         return -err;
+    } else {
+        return out_sz;
     }
-    return out_sz;
 }
 
-STATIC mp_obj_t socket_setblocking(mp_obj_t self_in, mp_obj_t flag_in) {
-    mp_obj_ssl_socket_t *o = MP_OBJ_TO_PTR(self_in);
-    mp_obj_t sock = o->sock;
-    mp_obj_t dest[3];
-
-    mp_load_method_maybe(sock, MP_QSTR_setblocking, dest);
-    if (dest[0] == MP_OBJ_NULL || dest[1] == MP_OBJ_NULL) {
-        mp_raise_msg(&mp_type_RuntimeError, "wrapped socket must implement setblocking()");
-    }
-
-    dest[2] = flag_in;
-    return mp_call_method_n_kw(1, 0, dest);
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(socket_setblocking_obj, socket_setblocking);
 
 STATIC mp_obj_ssl_socket_t *socket_new(mp_obj_t sock, struct ssl_args *args) {
     mp_obj_ssl_socket_t *o = m_new_obj(mp_obj_ssl_socket_t);
@@ -141,18 +134,17 @@ STATIC mp_obj_ssl_socket_t *socket_new(mp_obj_t sock, struct ssl_args *args) {
 	#endif
 
     mbedtls_entropy_init(&o->entropy);
-    ret = mbedtls_ctr_drbg_seed(&o->ctr_drbg, mbedtls_entropy_func, &o->entropy, NULL, 0);
+    const byte seed[] = "upy";
+    ret = mbedtls_ctr_drbg_seed(&o->ctr_drbg, null_entropy_func/*mbedtls_entropy_func*/, &o->entropy, seed, sizeof(seed));
     if (ret != 0) {
         printf("ret=%d\n", ret);
         assert(0);
     }
 
-    //printf("Warning: %s SSL certificate is not validated\n", sni);
-
     ret = mbedtls_ssl_config_defaults(&o->conf,
-                                      MBEDTLS_SSL_IS_CLIENT,
-                                      MBEDTLS_SSL_TRANSPORT_STREAM,
-                                      MBEDTLS_SSL_PRESET_DEFAULT);
+                    args->server_side.u_bool ? MBEDTLS_SSL_IS_SERVER : MBEDTLS_SSL_IS_CLIENT,
+                    MBEDTLS_SSL_TRANSPORT_STREAM,
+                    MBEDTLS_SSL_PRESET_DEFAULT);
     if (ret != 0) {
         assert(0);
     }
@@ -175,9 +167,7 @@ STATIC mp_obj_ssl_socket_t *socket_new(mp_obj_t sock, struct ssl_args *args) {
     }
 
     o->sock = sock;
-
-    socket_setblocking(o, mp_const_true);
-    mbedtls_ssl_set_bio(&o->ssl, o, _mbedtls_ssl_send, _mbedtls_ssl_recv, NULL);
+    mbedtls_ssl_set_bio(&o->ssl, &o->sock, _mbedtls_ssl_send, _mbedtls_ssl_recv, NULL);
 
     if (args->key.u_obj != MP_OBJ_NULL) {
         size_t key_len;
@@ -196,20 +186,26 @@ STATIC mp_obj_ssl_socket_t *socket_new(mp_obj_t sock, struct ssl_args *args) {
         assert(ret == 0);
     }
 
-    if (args->server_side.u_bool) {
-        assert(0);
-    } else {
-        while ((ret = mbedtls_ssl_handshake(&o->ssl)) != 0) {
-            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-                //assert(0);
-                printf("mbedtls_ssl_handshake error: -%x\n", -ret);
-                mp_raise_OSError(MP_EIO);
-            }
+    while ((ret = mbedtls_ssl_handshake(&o->ssl)) != 0) {
+        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            //assert(0);
+            printf("mbedtls_ssl_handshake error: -%x\n", -ret);
+            mp_raise_OSError(MP_EIO);
         }
     }
 
     return o;
 }
+
+STATIC mp_obj_t mod_ssl_getpeercert(mp_obj_t o_in, mp_obj_t binary_form) {
+    mp_obj_ssl_socket_t *o = MP_OBJ_TO_PTR(o_in);
+    if (!mp_obj_is_true(binary_form)) {
+        mp_raise_NotImplementedError(NULL);
+    }
+    const mbedtls_x509_crt* peer_cert = mbedtls_ssl_get_peer_cert(&o->ssl);
+    return mp_obj_new_bytes(peer_cert->raw.p, peer_cert->raw.len);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(mod_ssl_getpeercert_obj, mod_ssl_getpeercert);
 
 STATIC void socket_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
@@ -225,14 +221,11 @@ STATIC mp_uint_t socket_read(mp_obj_t o_in, void *buf, mp_uint_t size, int *errc
         // end of stream
         return 0;
     }
-
-    if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
-        *errcode = EWOULDBLOCK;
-        return 0;
-    }
-
     if (ret >= 0) {
         return ret;
+    }
+    if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+        ret = MP_EWOULDBLOCK;
     }
     *errcode = ret;
     return MP_STREAM_ERROR;
@@ -245,28 +238,35 @@ STATIC mp_uint_t socket_write(mp_obj_t o_in, const void *buf, mp_uint_t size, in
     if (ret >= 0) {
         return ret;
     }
-
     if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-        *errcode = EWOULDBLOCK;
-        return 0;
+        ret = MP_EWOULDBLOCK;
     }
-
     *errcode = ret;
     return MP_STREAM_ERROR;
 }
 
+STATIC mp_obj_t socket_setblocking(mp_obj_t self_in, mp_obj_t flag_in) {
+    mp_obj_ssl_socket_t *o = MP_OBJ_TO_PTR(self_in);
+    mp_obj_t sock = o->sock;
+    mp_obj_t dest[3];
+    mp_load_method(sock, MP_QSTR_setblocking, dest);
+    dest[2] = flag_in;
+    return mp_call_method_n_kw(1, 0, dest);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(socket_setblocking_obj, socket_setblocking);
+
 STATIC mp_obj_t socket_close(mp_obj_t self_in) {
     mp_obj_ssl_socket_t *self = MP_OBJ_TO_PTR(self_in);
 
+    mbedtls_pk_free(&self->pkey);
+    mbedtls_x509_crt_free(&self->cert);
     mbedtls_x509_crt_free(&self->cacert);
     mbedtls_ssl_free(&self->ssl);
     mbedtls_ssl_config_free(&self->conf);
     mbedtls_ctr_drbg_free(&self->ctr_drbg);
     mbedtls_entropy_free(&self->entropy);
 
-    mp_obj_t dest[2];
-    mp_load_method(self->sock, MP_QSTR_close, dest);
-    return mp_call_method_n_kw(0, 0, dest);
+    return mp_stream_close(self->sock);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(socket_close_obj, socket_close);
 
@@ -277,6 +277,7 @@ STATIC const mp_rom_map_elem_t ussl_socket_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_write), MP_ROM_PTR(&mp_stream_write_obj) },
     { MP_ROM_QSTR(MP_QSTR_setblocking), MP_ROM_PTR(&socket_setblocking_obj) },
     { MP_ROM_QSTR(MP_QSTR_close), MP_ROM_PTR(&socket_close_obj) },
+    { MP_ROM_QSTR(MP_QSTR_getpeercert), MP_ROM_PTR(&mod_ssl_getpeercert_obj) },
 };
 
 STATIC MP_DEFINE_CONST_DICT(ussl_socket_locals_dict, ussl_socket_locals_dict_table);
@@ -311,7 +312,7 @@ STATIC mp_obj_t mod_ssl_wrap_socket(size_t n_args, const mp_obj_t *pos_args, mp_
 
     struct ssl_args args;
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args,
-                     MP_ARRAY_SIZE(allowed_args), allowed_args, (mp_arg_val_t*)&args);
+        MP_ARRAY_SIZE(allowed_args), allowed_args, (mp_arg_val_t*)&args);
 
     return MP_OBJ_FROM_PTR(socket_new(sock, &args));
 }

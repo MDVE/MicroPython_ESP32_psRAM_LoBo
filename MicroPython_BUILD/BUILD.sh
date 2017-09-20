@@ -6,16 +6,17 @@
 
 # Usage:
 # ./BUILD               - run the build, create MicroPython firmware
-# ./BUILD -j4           - run the build on multicore system, much faster build
-#                         replace 4 with the number of cores on your system
+# ./BUILD -j2           - run the build on multicore system, much faster build
 # ./BUILD menuconfig    - run menuconfig to configure ESP32/MicroPython
 # ./BUILD clean         - clean the build
 # ./BUILD flash         - flash MicroPython firmware to ESP32
 # ./BUILD erase         - erase the whole ESP32 Flash
-# ./BUILD monitor       - run esp-idf terminal program
+# ./BUILD makefs        - create spiffs image
+# ./BUILD flashfs       - create and flash spiffs image to ESP32
+# ./BUILD copyfs        - flash prebuilt spiffs image to ESP32
 
 
-TOOLS_VER=ver20170914.id
+TOOLS_VER=ver20170920.id
 
 #---------------------------------------------------------------------------------------------------------------------
 # Check parameters
@@ -26,14 +27,9 @@ if [ "${opt}" == "verbose" ]; then
 fi
 opt2="xx"
 arg="$1"
-buildType="esp2"
 
 if [ "${opt:0:2}" == "-j" ]; then
     opt2="$2"
-    if [ "${opt2}" == "psram" ]; then
-        opt2="all"
-        buildType="psram"
-    fi
     if [ "${opt2}" == "verbose" ]; then
         opt2 = "all"
         export MP_SHOW_PROGRESS=yes
@@ -43,14 +39,11 @@ if [ "${opt:0:2}" == "-j" ]; then
     fi
     if [ "${opt2}" != "flash" ] && [ "${opt2}" != "all" ]; then
         echo ""
-        echo "Wrong parameter, usage: BUILD.sh -jN [all] | flash"
+        echo "Wrong parameter, usage: BUILD.sh -j2 [all] | flash"
         echo ""
         exit 1
     else
         arg=${opt2}
-        if [ "$3" == "psram" ]; then
-            buildType="psram"
-        fi
     fi
     if [ "$3" == "verbose" ]; then
         export MP_SHOW_PROGRESS=yes
@@ -59,28 +52,15 @@ if [ "${opt:0:2}" == "-j" ]; then
 elif [ "${opt}" == "makefs" ] || [ "${opt}" == "flashfs" ] || [ "${opt}" == "copyfs" ]; then
     arg=${opt}
     opt="none"
-    if [ "$2" == "psram" ]; then
-        buildType="psram"
-    fi
-    
+
 else
     if [ "${opt}" == "" ]; then
         opt="all"
         arg="all"
-    elif [ "${opt}" == "psram" ]; then
-        opt="all"
-        buildType="psram"
     elif [ "${opt}" == "flash" ] || [ "${opt}" == "erase" ] || [ "${opt}" == "monitor" ] || [ "${opt}" == "clean" ] || [ "${opt}" == "all" ] || [ "${opt}" == "menuconfig" ]; then
         opt=""
-        if [ "$2" == "psram" ]; then
-            buildType="psram"
-            if [ "$3" == "verbose" ]; then
-                export MP_SHOW_PROGRESS=yes
-            fi
-        else
-            if [ "$2" == "verbose" ]; then
-                export MP_SHOW_PROGRESS=yes
-            fi
+        if [ "$2" == "verbose" ]; then
+            export MP_SHOW_PROGRESS=yes
         fi
     else
         echo ""
@@ -111,7 +91,9 @@ BUILD_BASE_DIR=${PWD}
 # #################################################
 cd ../
 
+# ----------------------------------------
 # Remove directories from previous version
+# ----------------------------------------
 if [ -d "esp-idf" ]; then
     rm -rf esp-idf/ > /dev/null 2>&1
     rmdir esp-idf > /dev/null 2>&1
@@ -131,8 +113,22 @@ fi
 
 
 cd Tools
+# -----------------------------------------
+# _psram directories are not needed anymore
+# -----------------------------------------
+if [ -d "esp-idf_psram" ]; then
+    rm -rf esp-idf_psram/ > /dev/null 2>&1
+    rmdir esp-idf_psram > /dev/null 2>&1
+fi
+if [ -d "xtensa-esp32-elf_psram" ]; then
+    rm -rf xtensa-esp32-elf_psram/ > /dev/null 2>&1
+    rmdir xtensa-esp32-elf_psram > /dev/null 2>&1
+fi
 
-# Check version
+
+# ------------------------------------------
+# Check esp-idf and xtensa toolchain version
+# ------------------------------------------
 if [ ! -f "${TOOLS_VER}" ]; then
     echo "Removing old tools versions and cleaning build..."
     # Remove directories from previous version
@@ -140,17 +136,9 @@ if [ ! -f "${TOOLS_VER}" ]; then
         rm -rf esp-idf/
         rmdir esp-idf
     fi
-    if [ -d "esp-idf_psram" ]; then
-        rm -rf esp-idf_psram/ > /dev/null 2>&1
-        rmdir esp-idf_psram > /dev/null 2>&1
-    fi
     if [ -d "xtensa-esp32-elf" ]; then
         rm -rf xtensa-esp32-elf/ > /dev/null 2>&1
         rmdir xtensa-esp32-elf > /dev/null 2>&1
-    fi
-    if [ -d "xtensa-esp32-elf_psram" ]; then
-        rm -rf xtensa-esp32-elf_psram/ > /dev/null 2>&1
-        rmdir xtensa-esp32-elf_psram > /dev/null 2>&1
     fi
     rm -f *.id > /dev/null 2>&1
     touch ${TOOLS_VER}
@@ -177,14 +165,6 @@ if [ ! -d "esp-idf" ]; then
         exit 1
     fi
 fi
-if [ ! -d "esp-idf_psram" ]; then
-    echo "unpacking 'esp-idf_psram'"
-    tar -xf esp-idf_psram.tar.xz > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "unpacking 'esp-idf_psram' FAILED"
-        exit 1
-    fi
-fi
 if [ ! -d "xtensa-esp32-elf" ]; then
     echo "unpacking 'xtensa-esp32-elf'"
     tar -xf ${machine}/xtensa-esp32-elf.tar.xz > /dev/null 2>&1
@@ -193,19 +173,12 @@ if [ ! -d "xtensa-esp32-elf" ]; then
         exit 1
     fi
 fi
-if [ ! -d "xtensa-esp32-elf_psram" ]; then
-    echo "unpacking 'xtensa-esp32-elf_psram'"
-    tar -xf ${machine}/xtensa-esp32-elf_psram.tar.xz > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        echo "unpacking 'xtensa-esp32-elf_psram' FAILED"
-        exit 1
-    fi
-fi
 
+# ##################
 cd ${BUILD_BASE_DIR}
-# #########################################################
+# ##################
 
-
+# ---------------------------------
 # Test if mpy-cross has to be build
 # -------------------------------------------------------
 if [ "${arg}" == "all" ] || [ "${arg}" == "flash" ]; then
@@ -232,6 +205,7 @@ if [ "${arg}" == "all" ] || [ "${arg}" == "flash" ]; then
     # ###########################################################################
 fi
 
+# --------------------------------
 # Test if mkspiffs has to be build
 # ----------------------------------------------------------------------------------------
 if [ "${arg}" == "makefs" ] || [ "${arg}" == "flashfs" ] || [ "${arg}" == "copyfs" ]; then
@@ -254,33 +228,28 @@ if [ "${arg}" == "makefs" ] || [ "${arg}" == "flashfs" ] || [ "${arg}" == "copyf
     # ###########################################################################
 fi
 
+BUILD_TYPE=" with psRAM support"
+if [ -f "sdkconfig" ]; then
+    SDK_PSRAM=$(grep -e CONFIG_MEMMAP_SPIRAM_ENABLE=y sdkconfig)
+    if [ "${SDK_PSRAM}" == "" ]; then
+        BUILD_TYPE=""
+    fi
+fi
 
 # ########################################################
 # #              SET XTENSA & ESP-IDF PATHS              #
 # ########################################################
-if [ "${buildType}" == "psram" ]; then
-    cd ../
-    # Add Xtensa toolchain path to system path, and export path to esp-idf
-    export PATH=${PWD}/Tools/xtensa-esp32-elf_psram/bin:$PATH
-    # Export esp-idf path
-    export IDF_PATH=${PWD}/Tools/esp-idf_psram
+cd ../
+# Add Xtensa toolchain path to system path, and export path to esp-idf
+export PATH=${PWD}/Tools/xtensa-esp32-elf/bin:$PATH
+export IDF_PATH=${PWD}/Tools/esp-idf
 
-    echo ""
-    echo "Building MicroPython for ESP32 with esp-idf psRAM branch"
-    echo ""
-else
-    cd ../
-    # Add Xtensa toolchain path to system path, and export path to esp-idf
-    export PATH=${PWD}/Tools/xtensa-esp32-elf/bin:$PATH
-    export IDF_PATH=${PWD}/Tools/esp-idf
-
-    echo ""
-    echo "Building MicroPython for ESP32 with esp-idf master branch"
-    echo ""
-fi
+echo ""
+echo "Building MicroPython for ESP32${BUILD_TYPE}"
+echo ""
 cd ${BUILD_BASE_DIR}
 
-export HOST_PLATFORM=linux
+#export HOST_PLATFORM=linux
 export CROSS_COMPILE=xtensa-esp32-elf-
 
 # ########################################################
@@ -293,26 +262,6 @@ if [ "${arg}" == "all" ] || [ "${arg}" == "clean" ]; then
     # ---------------------------
     if [ ! -f "sdkconfig" ]; then
         echo "sdkconfig NOT FOUND, RUN ./BUILD.sh menuconfig FIRST."
-        echo ""
-        exit 1
-    fi
-
-    # Test if toolchain is changed
-    SDK_PSRAM=$(grep -e CONFIG_MEMMAP_SPIRAM_ENABLE sdkconfig)
-    if [ "${buildType}" == "psram" ] && [ "${SDK_PSRAM}" == "" ]; then
-        echo "TOOLCHAIN CHANGED, RUN"
-        echo "./BUILD.sh menuconfig psram"
-        echo "./BUILD.sh clean psram"
-        echo "TO BUILD WITH psRAM support."
-        echo ""
-        exit 1
-    fi
-
-    if [ ! "${buildType}" == "psram" ] && [ "${SDK_PSRAM}" != "" ]; then
-        echo "TOOLCHAIN CHANGED, RUN"
-        echo "./BUILD.sh menuconfig"
-        echo "./BUILD.sh clean"
-        echo "TO BUILD WITHOUT psRAM support."
         echo ""
         exit 1
     fi
@@ -384,15 +333,7 @@ fi
 if [ $? -eq 0 ]; then
     echo "OK."
     if [ "${arg}" == "all" ]; then
-        if [ "${buildType}" == "psram" ]; then
-            cp -f build/MicroPython.bin firmware/esp32_psram > /dev/null 2>&1
-            cp -f build/bootloader/bootloader.bin firmware/esp32_psram/bootloader > /dev/null 2>&1
-            cp -f build/partitions_singleapp.bin firmware/esp32_psram > /dev/null 2>&1
-            cp -f sdkconfig firmware/esp32_psram > /dev/null 2>&1
-            echo "#!/bin/bash" > firmware/esp32_psram/flash.sh
-            make print_flash_cmd >> firmware/esp32_psram/flash.sh 2>/dev/null
-            chmod +x firmware/esp32_psram/flash.sh > /dev/null 2>&1
-        else
+        if [ "${BUILD_TYPE}" == "" ]; then
             cp -f build/MicroPython.bin firmware/esp32 > /dev/null 2>&1
             cp -f build/bootloader/bootloader.bin firmware/esp32/bootloader > /dev/null 2>&1
             cp -f build/partitions_singleapp.bin firmware/esp32 > /dev/null 2>&1
@@ -400,6 +341,14 @@ if [ $? -eq 0 ]; then
             echo "#!/bin/bash" > firmware/esp32/flash.sh
             make print_flash_cmd >> firmware/esp32/flash.sh 2>/dev/null
             chmod +x firmware/esp32/flash.sh > /dev/null 2>&1
+        else
+            cp -f build/MicroPython.bin firmware/esp32_psram > /dev/null 2>&1
+            cp -f build/bootloader/bootloader.bin firmware/esp32_psram/bootloader > /dev/null 2>&1
+            cp -f build/partitions_singleapp.bin firmware/esp32_psram > /dev/null 2>&1
+            cp -f sdkconfig firmware/esp32_psram > /dev/null 2>&1
+            echo "#!/bin/bash" > firmware/esp32_psram/flash.sh
+            make print_flash_cmd >> firmware/esp32_psram/flash.sh 2>/dev/null
+            chmod +x firmware/esp32_psram/flash.sh > /dev/null 2>&1
         fi
         echo "Build complete."
         echo "You can now run ./BUILD.sh flash"

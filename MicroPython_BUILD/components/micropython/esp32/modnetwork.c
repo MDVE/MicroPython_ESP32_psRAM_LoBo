@@ -54,37 +54,53 @@ NORETURN void _esp_exceptions(esp_err_t e) {
    switch (e) {
       case ESP_ERR_WIFI_NOT_INIT: 
         mp_raise_msg(&mp_type_OSError, "Wifi Not Initialized");
+        break;
       case ESP_ERR_WIFI_NOT_STARTED:
         mp_raise_msg(&mp_type_OSError, "Wifi Not Started");
+        break;
       case ESP_ERR_WIFI_CONN:
         mp_raise_msg(&mp_type_OSError, "Wifi Internal Error");
+        break;
       case ESP_ERR_WIFI_SSID:
         mp_raise_msg(&mp_type_OSError, "Wifi SSID Invalid");
+        break;
       case ESP_ERR_WIFI_FAIL:
         mp_raise_msg(&mp_type_OSError, "Wifi Internal Failure");
+        break;
       case ESP_ERR_WIFI_IF:
         mp_raise_msg(&mp_type_OSError, "Wifi Invalid Interface");
+        break;
       case ESP_ERR_WIFI_MAC:
         mp_raise_msg(&mp_type_OSError, "Wifi Invalid MAC Address");
+        break;
       case ESP_ERR_WIFI_ARG:
         mp_raise_msg(&mp_type_OSError, "Wifi Invalid Argument");
+        break;
       case ESP_ERR_WIFI_MODE:
         mp_raise_msg(&mp_type_OSError, "Wifi Invalid Mode");
+        break;
       case ESP_ERR_WIFI_PASSWORD:
         mp_raise_msg(&mp_type_OSError, "Wifi Invalid Password");
+        break;
       case ESP_ERR_WIFI_NVS:
         mp_raise_msg(&mp_type_OSError, "Wifi Internal NVS Error");
+        break;
       case ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS:
         mp_raise_msg(&mp_type_OSError, "TCP/IP Invalid Parameters");
+        break;
       case ESP_ERR_TCPIP_ADAPTER_IF_NOT_READY:
         mp_raise_msg(&mp_type_OSError, "TCP/IP IF Not Ready");
+        break;
       case ESP_ERR_TCPIP_ADAPTER_DHCPC_START_FAILED:
         mp_raise_msg(&mp_type_OSError, "TCP/IP DHCP Client Start Failed");
+        break;
       case ESP_ERR_WIFI_TIMEOUT:
         mp_raise_OSError(MP_ETIMEDOUT);
+        break;
       case ESP_ERR_TCPIP_ADAPTER_NO_MEM:
       case ESP_ERR_WIFI_NO_MEM:
         mp_raise_OSError(MP_ENOMEM); 
+        break;
       default:
         nlr_raise(mp_obj_new_exception_msg_varg(
           &mp_type_RuntimeError, "Wifi Unknown Error 0x%04x", e
@@ -108,7 +124,6 @@ STATIC const wlan_if_obj_t wlan_sta_obj = {{&wlan_if_type}, WIFI_IF_STA};
 STATIC const wlan_if_obj_t wlan_ap_obj = {{&wlan_if_type}, WIFI_IF_AP};
 
 //static wifi_config_t wifi_ap_config = {{{0}}};
-//static wifi_config_t wifi_sta_config = {{{0}}};
 static wifi_config_t wifi_sta_config = {0};
 
 // Set to "true" if the STA interface is requested to be connected by the
@@ -131,8 +146,16 @@ static esp_err_t event_handler(void *ctx, system_event_t *event) {
         system_event_sta_disconnected_t *disconn = &event->event_info.disconnected;
         ESP_LOGI("wifi", "STA_DISCONNECTED, reason:%d", disconn->reason);
         switch (disconn->reason) {
+			case WIFI_REASON_BEACON_TIMEOUT:
+				mp_printf(MP_PYTHON_PRINTER, "beacon timeout\n");
+				// AP has dropped out; try to reconnect.
+				break;
+			case WIFI_REASON_NO_AP_FOUND:
+				mp_printf(MP_PYTHON_PRINTER, "no AP found\n");
+				// AP may not exist, or it may have momentarily dropped out; try to reconnect.
+				break;
             case WIFI_REASON_AUTH_FAIL:
-                mp_printf(MP_PYTHON_PRINTER, "authentication failed");
+                mp_printf(MP_PYTHON_PRINTER, "authentication failed\n");
                 wifi_sta_connected = false;
                 break;
             default:
@@ -146,7 +169,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event) {
                     // STA is active so attempt to reconnect.
                     esp_err_t e = esp_wifi_connect();
                     if (e != ESP_OK) {
-                        mp_printf(MP_PYTHON_PRINTER, "error attempting to reconnect: 0x%04x", e);
+                        mp_printf(MP_PYTHON_PRINTER, "error attempting to reconnect: 0x%04x\n", e);
                     }
                 }
             }
@@ -181,7 +204,7 @@ STATIC mp_obj_t get_wlan(size_t n_args, const mp_obj_t *args) {
     } else if (idx == WIFI_IF_AP) {
         return MP_OBJ_FROM_PTR(&wlan_ap_obj);
     } else {
-        mp_raise_msg(&mp_type_ValueError, "invalid WLAN interface identifier");
+    	mp_raise_ValueError("invalid WLAN interface identifier");
     }
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(get_wlan_obj, 0, 1, get_wlan);
@@ -370,8 +393,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(esp_ifconfig_obj, 1, 2, esp_ifconfig)
 
 STATIC mp_obj_t esp_config(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
     if (n_args != 1 && kwargs->used != 0) {
-        nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError,
-            "either pos or kw args are allowed"));
+        mp_raise_TypeError("either pos or kw args are allowed");
     }
 
     wlan_if_obj_t *self = MP_OBJ_TO_PTR(args[0]);
@@ -392,8 +414,7 @@ STATIC mp_obj_t esp_config(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs
                         mp_buffer_info_t bufinfo;
                         mp_get_buffer_raise(kwargs->table[i].value, &bufinfo, MP_BUFFER_READ);
                         if (bufinfo.len != 6) {
-                            nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError,
-                                "invalid buffer length"));
+                            mp_raise_ValueError("invalid buffer length");
                         }
                         ESP_EXCEPTIONS(esp_wifi_set_mac(self->if_id, bufinfo.buf));
                         break;
@@ -451,8 +472,7 @@ STATIC mp_obj_t esp_config(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs
     // Get config
 
     if (n_args != 2) {
-        nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError,
-            "can query only one param"));
+        mp_raise_TypeError("can query only one param");
     }
 
     int req_if = -1;
@@ -494,8 +514,8 @@ STATIC mp_obj_t esp_config(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs
     return val;
 
 unknown:
-    nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError,
-        "unknown config param"));
+	mp_raise_ValueError("unknown config param");
+    return mp_const_none;
 }
 
 STATIC MP_DEFINE_CONST_FUN_OBJ_KW(esp_config_obj, 1, esp_config);

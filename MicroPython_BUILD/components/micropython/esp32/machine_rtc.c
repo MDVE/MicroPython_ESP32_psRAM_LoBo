@@ -78,7 +78,7 @@ uint32_t sntp_update_period = 3600000; // in ms
 
 #define MACHINE_RTC_LAST_EXT_PIN 39
 
-machine_rtc_config_t machine_rtc_config = { 0 };
+machine_rtc_config_t machine_rtc_config = { 0, -1, 0, 0, 0 };
 
 
 #define DEFAULT_SNTP_SERVER                     "pool.ntp.org"

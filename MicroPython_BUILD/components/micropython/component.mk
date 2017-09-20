@@ -14,10 +14,6 @@ BUILD = $(BUILD_DIR_BASE)
 
 COMPONENT_OWNCLEANTARGET := clean
 
-ifneq ($(wildcard $(IDF_PATH)/components/heap/.*),)
-CFLAGS += -DIDF_USEHEAP=1
-endif
-
 ifneq ($(wildcard $(IDF_PATH)/components/driver/sdspi_host.*),)
 CFLAGS += -DIDF_HAS_SDSPIHOST=1
 endif
@@ -162,6 +158,7 @@ SRC_C =  $(addprefix esp32/,\
 	machine_hw_i2c.c \
 	machine_neopixel.c \
 	machine_dht.c \
+	network_bluetooth.c \
 	)
 
 ifdef CONFIG_MICROPY_USE_CURL

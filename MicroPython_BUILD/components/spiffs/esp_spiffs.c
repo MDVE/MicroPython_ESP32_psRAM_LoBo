@@ -34,11 +34,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#ifdef IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 
 #include "esp_spiffs.h"
 #include "esp_attr.h"
@@ -67,11 +63,7 @@ int32_t IRAM_ATTR esp32_spi_flash_read(uint32_t addr, uint32_t size, uint8_t *ds
 
 	if ((aaddr != addr) || (asize != size)) {
 		// Align buffer
-		#ifdef IDF_USEHEAP
 		buff = heap_caps_malloc(asize+4, MALLOC_CAP_DMA);
-		#else
-		buff = pvPortMallocCaps(asize+4, MALLOC_CAP_DMA);
-		#endif
 		if (!buff) {
 			return SPIFFS_ERR_INTERNAL;
 		}
@@ -114,11 +106,7 @@ int32_t IRAM_ATTR esp32_spi_flash_write(uint32_t addr, uint32_t size, const uint
 
 	if ((aaddr != addr) || (asize != size)) {
 		// Align buffer
-		#ifdef IDF_USEHEAP
 		buff = heap_caps_malloc(asize+4, MALLOC_CAP_DMA);
-		#else
-		buff = pvPortMallocCaps(asize+4, MALLOC_CAP_DMA);
-		#endif
 		if (!buff) {
 			return SPIFFS_ERR_INTERNAL;
 		}

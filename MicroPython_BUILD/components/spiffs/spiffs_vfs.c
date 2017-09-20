@@ -46,11 +46,7 @@
 #include <limits.h>
 #include "esp_log.h"
 
-#ifdef IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 
 #include <sys/stat.h>
 
@@ -792,22 +788,14 @@ int spiffs_mount() {
 	cfg.hal_write_f = (spiffs_write)low_spiffs_write;
 	cfg.hal_erase_f = (spiffs_erase)low_spiffs_erase;
 
-	#ifdef IDF_USEHEAP
 	my_spiffs_work_buf = heap_caps_malloc(cfg.log_page_size * 8, MALLOC_CAP_DMA);
-	#else
-	my_spiffs_work_buf = pvPortMallocCaps(cfg.log_page_size * 8, MALLOC_CAP_DMA);
-	#endif
     if (!my_spiffs_work_buf) {
     	err = 1;
     	goto err_exit;
     }
 
     int fds_len = sizeof(spiffs_fd) * SPIFFS_TEMPORAL_CACHE_HIT_SCORE;
-	#ifdef IDF_USEHEAP
     my_spiffs_fds = heap_caps_malloc(fds_len, MALLOC_CAP_DMA);
-	#else
-    my_spiffs_fds = pvPortMallocCaps(fds_len, MALLOC_CAP_DMA);
-	#endif
     if (!my_spiffs_fds) {
         free(my_spiffs_work_buf);
     	err = 2;
@@ -815,11 +803,7 @@ int spiffs_mount() {
     }
 
     int cache_len = cfg.log_page_size * SPIFFS_TEMPORAL_CACHE_HIT_SCORE;
-	#ifdef IDF_USEHEAP
     my_spiffs_cache = heap_caps_malloc(cache_len, MALLOC_CAP_DMA);
-	#else
-	my_spiffs_cache = pvPortMallocCaps(cache_len, MALLOC_CAP_DMA);
-	#endif
     if (!my_spiffs_cache) {
         free(my_spiffs_work_buf);
         free(my_spiffs_fds);

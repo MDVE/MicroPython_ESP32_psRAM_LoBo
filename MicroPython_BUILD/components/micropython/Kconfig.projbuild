@@ -66,19 +66,18 @@ menu "MicroPython"
 	
 	    config MICROPY_STACK_SIZE
 	        int "MicroPython stack size (KB)"
-	        range 8 32 if !MEMMAP_SPIRAM_ENABLE
-	        range 8 64 if MEMMAP_SPIRAM_ENABLE
-	        default 20 if !MEMMAP_SPIRAM_ENABLE
-	        default 32 if MEMMAP_SPIRAM_ENABLE
+	        range 8 32 if !SPIRAM_SUPPORT
+	        range 8 64 if SPIRAM_SUPPORT
+	        default 20
 	        help
 	        Set the size of the MicroPython stack in Kbytes
 	
 	    config MICROPY_HEAP_SIZE
 	        int "MicroPython heap size (KB)"
-	        range 48 128 if !MEMMAP_SPIRAM_ENABLE
-	        range 512 4096 if MEMMAP_SPIRAM_ENABLE
-	        default 80 if !MEMMAP_SPIRAM_ENABLE
-	        default 2048 if MEMMAP_SPIRAM_ENABLE
+	        range 48 128 if !SPIRAM_SUPPORT
+	        range 512 4096 if SPIRAM_SUPPORT
+	        default 80 if !SPIRAM_SUPPORT
+	        default 2048 if SPIRAM_SUPPORT
 	        help
 	        Set the size of the MicroPython heap in Kbytes
 	

@@ -28,11 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
-#ifdef IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 
 #include "py/runtime.h"
 #include "py/stream.h"

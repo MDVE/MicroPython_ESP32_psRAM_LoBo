@@ -3,10 +3,11 @@
 #include "driver/gpio.h"
 #include "driver/rmt.h"
 
-#define DIVIDER             4 // 80 MHz clock divider
-#define RMT_DURATION_NS  12.5 // minimum time of a single RMT duration based on 80 MHz clock (ns)
-#define RMT_PERIOD_NS      50 // minimum bit time based on 80 MHz clock and divider of 4
-
+#define DIVIDER                4	// 80 MHz clock divider
+#define RMT_DURATION_NS     12.5	// minimum time of a single RMT duration based on 80 MHz clock (ns)
+#define RMT_PERIOD_NS         50	// minimum bit time based on 80 MHz clock and divider of 4
+#define RTM_PIXEL_BUFFER_SIZE  1	//
+#define MAX_PULSES			  32	// A channel has a 64 "pulse" buffer - we use half per pass
 
 typedef struct pixel {
 	uint8_t red;
@@ -30,7 +31,6 @@ typedef struct pixel_timing {
 
 typedef struct pixel_settings {
 	pixel_t *pixels;		// buffer containing pixel values
-	rmt_item32_t *items;	// buffer containing BIT values for all the pixels
 	pixel_timing_t timings;	// timing data from which the pixels BIT data are formed
 	uint16_t pixel_count;	// number of used pixels
 	uint8_t brightness;		// brightness factor applied to pixel color
@@ -51,21 +51,6 @@ typedef struct pixel_settings {
 	.blue_offset = 8,\
 	.white_offset = 0,\
 	.nbits = 24\
-}
-
-#define NEOPIXEL_RMT_INIT_CONFIG_DEFAULT {\
-	.rmt_mode = RMT_MODE_TX,\
-	.channel = RMT_CHANNEL_0,\
-	.gpio_num = 0,\
-	.mem_block_num = 8 - RMT_CHANNEL_0,\
-	.clk_div = DIVIDER,\
-	.tx_config.loop_en = 0,\
-	.tx_config.carrier_en = 0,\
-	.tx_config.idle_output_en = 1,\
-	.tx_config.idle_level = (rmt_idle_level_t)0,\
-	.tx_config.carrier_freq_hz = 10000,\
-	.tx_config.carrier_level = (rmt_carrier_level_t)1,\
-	.tx_config.carrier_duty_percent = 50\
 }
 
 #define DEFAULT_WS2812_TIMINGS {\
@@ -101,6 +86,9 @@ void np_get_pixel_color(pixel_settings_t *px, uint16_t idx, uint8_t *red, uint8_
 uint32_t np_get_pixel_color32(pixel_settings_t *px, uint16_t idx);
 void np_show(pixel_settings_t *px);
 void np_clear(pixel_settings_t *px);
+
+int neopixel_init(int gpioNum, rmt_channel_t channel);
+void neopixel_deinit(rmt_channel_t channel);
 
 void rgb_to_hsb( uint32_t color, float *hue, float *sat, float *bri );
 uint32_t hsb_to_rgb(float hue, float saturation, float brightness);

@@ -42,7 +42,6 @@ typedef struct _machine_uart_obj_t {
     uint8_t bits;
     uint8_t parity;
     uint8_t stop;
-    uint32_t baudrate;
     int8_t tx;
     int8_t rx;
     int8_t rts;
@@ -58,37 +57,53 @@ QueueHandle_t UART_QUEUE[UART_NUM_MAX] = {};
 /******************************************************************************/
 // MicroPython bindings for UART
 
+//-----------------------------------------------------------------------------------------------
 STATIC void machine_uart_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     machine_uart_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    uint32_t baudrate;
+    uart_get_baudrate(self->uart_num, &baudrate);
     mp_printf(print, "UART(%u, baudrate=%u, bits=%u, parity=%s, stop=%u, tx=%d, rx=%d, rts=%d, cts=%d, timeout=%u, timeout_char=%u)",
-        self->uart_num, self->baudrate, self->bits, _parity_name[self->parity],
+        self->uart_num, baudrate, self->bits, _parity_name[self->parity],
         self->stop, self->tx, self->rx, self->rts, self->cts, self->timeout, self->timeout_char);
 }
 
+//--------------------------------------------------------------------------------------------------------------------------
 STATIC void machine_uart_init_helper(machine_uart_obj_t *self, size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     enum { ARG_baudrate, ARG_bits, ARG_parity, ARG_stop, ARG_tx, ARG_rx, ARG_rts, ARG_cts, ARG_timeout, ARG_timeout_char };
     static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_baudrate, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_bits, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_parity, MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
-        { MP_QSTR_stop, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_tx, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
-        { MP_QSTR_rx, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
-        { MP_QSTR_rts, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
-        { MP_QSTR_cts, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
-        { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_timeout_char, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
+        { MP_QSTR_baudrate,						 MP_ARG_INT, {.u_int = 0} },
+        { MP_QSTR_bits,							 MP_ARG_INT, {.u_int = 0} },
+        { MP_QSTR_parity,						 MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
+        { MP_QSTR_stop,							 MP_ARG_INT, {.u_int = 0} },
+        { MP_QSTR_tx,			MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
+        { MP_QSTR_rx,			MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
+        { MP_QSTR_rts,			MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
+        { MP_QSTR_cts,			MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
+        { MP_QSTR_timeout,		MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
+        { MP_QSTR_timeout_char,	MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
+    // wait for all data to be transmitted before changing settings
+    uart_wait_tx_done(self->uart_num, pdMS_TO_TICKS(1000));
+
     // set baudrate
+    uint32_t baudrate = 115200;
     if (args[ARG_baudrate].u_int > 0) {
-        self->baudrate = args[ARG_baudrate].u_int;
-        uart_set_baudrate(self->uart_num, self->baudrate);
+        uart_set_baudrate(self->uart_num, args[ARG_baudrate].u_int);
+        uart_get_baudrate(self->uart_num, &baudrate);
     }
 
-    uart_set_pin(self->uart_num, args[ARG_tx].u_int, args[ARG_rx].u_int, args[ARG_rts].u_int, args[ARG_cts].u_int);
+    if (((self->tx == -2) && (args[ARG_tx].u_int == UART_PIN_NO_CHANGE)) ||
+    		((self->rx == -2) && (args[ARG_rx].u_int == UART_PIN_NO_CHANGE))) {
+        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "Tx&Rx pins must be set: u=machine.UART(uart_num, tx=pin, rx=pin)"));
+    }
+
+    esp_err_t res =uart_set_pin(self->uart_num, args[ARG_tx].u_int, args[ARG_rx].u_int, args[ARG_rts].u_int, args[ARG_cts].u_int);
+    if (res != ESP_OK) {
+        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "Error setting pins"));
+    }
     if (args[ARG_tx].u_int != UART_PIN_NO_CHANGE) {
         self->tx = args[ARG_tx].u_int;
     }
@@ -126,7 +141,7 @@ STATIC void machine_uart_init_helper(machine_uart_obj_t *self, size_t n_args, co
             self->bits = 8;
             break;
         default:
-            nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "invalid data bits"));
+            mp_raise_ValueError("invalid data bits");
             break;
     }
 
@@ -161,7 +176,7 @@ STATIC void machine_uart_init_helper(machine_uart_obj_t *self, size_t n_args, co
             self->stop = 2;
             break;
         default:
-            nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "invalid stop bits"));
+            mp_raise_ValueError("invalid stop bits");
             break;
     }
 
@@ -171,12 +186,13 @@ STATIC void machine_uart_init_helper(machine_uart_obj_t *self, size_t n_args, co
     // set timeout_char
     // make sure it is at least as long as a whole character (13 bits to be safe)
     self->timeout_char = args[ARG_timeout_char].u_int;
-    uint32_t min_timeout_char = 13000 / self->baudrate + 1;
+    uint32_t min_timeout_char = 13000 / baudrate + 1;
     if (self->timeout_char < min_timeout_char) {
         self->timeout_char = min_timeout_char;
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------
 STATIC mp_obj_t machine_uart_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 1, MP_OBJ_FUN_ARGS_MAX, true);
 
@@ -206,27 +222,26 @@ STATIC mp_obj_t machine_uart_make_new(const mp_obj_type_t *type, size_t n_args, 
     machine_uart_obj_t *self = m_new_obj(machine_uart_obj_t);
     self->base.type = &machine_uart_type;
     self->uart_num = uart_num;
-    self->baudrate = 115200;
     self->bits = 8;
     self->parity = 0;
     self->stop = 1;
-    self->rts = UART_PIN_NO_CHANGE;
-    self->cts = UART_PIN_NO_CHANGE;
+    self->rts = -1;
+    self->cts = -1;
     self->timeout = 0;
     self->timeout_char = 0;
 
     switch (uart_num) {
         case UART_NUM_0:
-            self->rx = UART_PIN_NO_CHANGE; // GPIO 3
-            self->tx = UART_PIN_NO_CHANGE; // GPIO 1
+            self->rx = UART_PIN_NO_CHANGE;
+            self->tx = UART_PIN_NO_CHANGE;
             break;
         case UART_NUM_1:
-            self->rx = 9;
-            self->tx = 10;
+            self->rx = -2;
+            self->tx = -2;
             break;
         case UART_NUM_2:
-            self->rx = 16;
-            self->tx = 17;
+            self->rx = -2;
+            self->tx = -2;
             break;
     }
 
@@ -253,12 +268,14 @@ STATIC mp_obj_t machine_uart_make_new(const mp_obj_type_t *type, size_t n_args, 
     return MP_OBJ_FROM_PTR(self);
 }
 
+//-----------------------------------------------------------------------------------------
 STATIC mp_obj_t machine_uart_init(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     machine_uart_init_helper(args[0], n_args - 1, args + 1, kw_args);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(machine_uart_init_obj, 1, machine_uart_init);
 
+//--------------------------------------------------
 STATIC mp_obj_t machine_uart_any(mp_obj_t self_in) {
     machine_uart_obj_t *self = MP_OBJ_TO_PTR(self_in);
     size_t rxbufsize;
@@ -267,6 +284,7 @@ STATIC mp_obj_t machine_uart_any(mp_obj_t self_in) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(machine_uart_any_obj, machine_uart_any);
 
+//=================================================================
 STATIC const mp_rom_map_elem_t machine_uart_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&machine_uart_init_obj) },
 
@@ -276,9 +294,9 @@ STATIC const mp_rom_map_elem_t machine_uart_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_readinto), MP_ROM_PTR(&mp_stream_readinto_obj) },
     { MP_ROM_QSTR(MP_QSTR_write), MP_ROM_PTR(&mp_stream_write_obj) },
 };
-
 STATIC MP_DEFINE_CONST_DICT(machine_uart_locals_dict, machine_uart_locals_dict_table);
 
+//------------------------------------------------------------------------------------------------
 STATIC mp_uint_t machine_uart_read(mp_obj_t self_in, void *buf_in, mp_uint_t size, int *errcode) {
     machine_uart_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
@@ -304,6 +322,7 @@ STATIC mp_uint_t machine_uart_read(mp_obj_t self_in, void *buf_in, mp_uint_t siz
     return bytes_read;
 }
 
+//-------------------------------------------------------------------------------------------------------
 STATIC mp_uint_t machine_uart_write(mp_obj_t self_in, const void *buf_in, mp_uint_t size, int *errcode) {
     machine_uart_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
@@ -318,6 +337,7 @@ STATIC mp_uint_t machine_uart_write(mp_obj_t self_in, const void *buf_in, mp_uin
     return bytes_written;
 }
 
+//-----------------------------------------------------------------------------------------------------
 STATIC mp_uint_t machine_uart_ioctl(mp_obj_t self_in, mp_uint_t request, mp_uint_t arg, int *errcode) {
     machine_uart_obj_t *self = self_in;
     mp_uint_t ret;
@@ -339,6 +359,7 @@ STATIC mp_uint_t machine_uart_ioctl(mp_obj_t self_in, mp_uint_t request, mp_uint
     return ret;
 }
 
+//==========================================
 STATIC const mp_stream_p_t uart_stream_p = {
     .read = machine_uart_read,
     .write = machine_uart_write,
@@ -346,6 +367,7 @@ STATIC const mp_stream_p_t uart_stream_p = {
     .is_text = false,
 };
 
+//=======================================
 const mp_obj_type_t machine_uart_type = {
     { &mp_type_type },
     .name = MP_QSTR_UART,

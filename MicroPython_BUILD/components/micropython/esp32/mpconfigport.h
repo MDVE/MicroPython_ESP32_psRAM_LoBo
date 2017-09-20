@@ -270,7 +270,7 @@ extern const struct _mp_obj_module_t mp_module_ssh;
 
 #define MP_STATE_PORT MP_STATE_VM
 
-#if CONFIG_MEMMAP_SPIRAM_ENABLE
+#if CONFIG_SPIRAM_SUPPORT
 #define MICROPY_PORT_ROOT_POINTERS \
     const char *readline_hist[80]; \
     mp_obj_list_t mod_network_nic_list;                         \

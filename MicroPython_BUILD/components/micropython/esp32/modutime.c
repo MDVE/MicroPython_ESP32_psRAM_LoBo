@@ -38,7 +38,7 @@
 STATIC mp_obj_t time_time(void) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    mp_float_t curtime = (float)tv.tv_sec + ((float)tv.tv_usec / 1000000.0);
+    mp_float_t curtime = (double)tv.tv_sec + (double)((double)tv.tv_usec / 1000000.0);
     return mp_obj_new_float(curtime);
 }
 MP_DEFINE_CONST_FUN_OBJ_0(time_time_obj, time_time);

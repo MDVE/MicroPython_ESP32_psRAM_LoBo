@@ -6,6 +6,15 @@
 #include "libs/neopixel.h"
 
 
+static xSemaphoreHandle neopixel_sem = NULL;
+static intr_handle_t rmt_intr_handle = NULL;
+static rmt_channel_t RMTchannel = RMT_CHANNEL_0;
+static uint16_t neopixel_pos, neopixel_buf_len, neopixel_half, neopixel_bufIsDirty;
+static pixel_settings_t *neopixel_px;
+static rmt_item32_t RMT_Items[MAX_PULSES*2+1];
+static uint8_t *neopixel_buffer = NULL;
+static uint8_t neopixel_bpp;
+
 /**
  * Set two levels of RMT output to the Neopixel value for a "1".
  * This is:
@@ -51,14 +60,6 @@ uint8_t offset_color(char o, pixel_t *p) {
 		case 'W': return p->white;
 	}
 	return 0;
-}
-
-//--------------------------------------------------------------------
-static uint32_t get_wire_value(pixel_settings_t *px, uint16_t pixel) {
-	return  (offset_color(px->color_order[0], &px->pixels[pixel]) << 24) |
-		(offset_color(px->color_order[1], &px->pixels[pixel]) << 16) |
-		(offset_color(px->color_order[2], &px->pixels[pixel]) << 8)  |
-		(offset_color(px->color_order[3], &px->pixels[pixel]));
 }
 
 //----------------------------------------------------------------
@@ -109,32 +110,175 @@ uint32_t np_get_pixel_color32(pixel_settings_t *px, uint16_t idx)
 	return (uint32_t)((px->pixels[idx].red << 24) || (px->pixels[idx].green << 16) || (px->pixels[idx].blue << 8) || (px->pixels[idx].white));
 }
 
+
+
+//-------------------------------
+static void copyToRmtBlock_half()
+{
+	// This fills half an RMT block
+	// When wrap around is happening, we want to keep the inactive half of the RMT block filled
+	uint16_t i, offset, len, byteval;
+
+	offset = neopixel_half * MAX_PULSES;
+	neopixel_half = !neopixel_half;
+
+	len = neopixel_buf_len - neopixel_pos;
+	if (len > (MAX_PULSES / 8)) len = (MAX_PULSES / 8);
+
+	if (!len) {
+	if (!neopixel_bufIsDirty) return;
+		// Clear the channel's data block and return
+		for (i = 0; i < MAX_PULSES; i++) {
+			RMTMEM.chan[RMTchannel].data32[i + offset].val = 0;
+		}
+		neopixel_bufIsDirty = 0;
+		return;
+	}
+	neopixel_bufIsDirty = 1;
+
+	rmt_item32_t * pCurrentItem;
+	if (neopixel_half) pCurrentItem = RMT_Items + (sizeof(rmt_item32_t) * MAX_PULSES);
+	else pCurrentItem = RMT_Items;
+
+	// Populate RMT bit buffer
+	for (i = 0; i < len; i++) {
+		byteval = neopixel_buffer[i+neopixel_pos];
+
+		// Shift bits out, MSB first, setting RMTMEM.chan[n].data32[x] to the rmtPulsePair value corresponding to the buffered bit value
+		for (int j=7; j>=0; j--) {
+			if (byteval & (1<<j)) neopixel_mark(pCurrentItem, neopixel_px);
+			else neopixel_space(pCurrentItem, neopixel_px);
+
+			RMTMEM.chan[RMTchannel].data32[i * 8 + offset + (7-j)].val = pCurrentItem->val;
+			pCurrentItem++;
+		}
+		if (i + neopixel_pos == neopixel_buf_len - 1) {
+			rmt_terminate(pCurrentItem, neopixel_px);
+			RMTMEM.chan[RMTchannel].data32[i * 8 + offset + 7].val = pCurrentItem->val;
+		}
+	}
+	// Clear the remainder of the channel's data not set above
+	for (i *= 8; i < MAX_PULSES; i++) {
+		RMTMEM.chan[RMTchannel].data32[i + offset].val = 0;
+	}
+
+	neopixel_pos += len;
+	return;
+}
+
+
+//-------------------------------------------------------
+static void IRAM_ATTR neopixel_handleInterrupt(void *arg)
+{
+  portBASE_TYPE taskAwoken = 0;
+
+  if (RMT.int_st.ch0_tx_thr_event) {
+    copyToRmtBlock_half();
+    RMT.int_clr.ch0_tx_thr_event = 1;
+  }
+  else if (RMT.int_st.ch0_tx_end && neopixel_sem) {
+    xSemaphoreGiveFromISR(neopixel_sem, &taskAwoken);
+    RMT.int_clr.ch0_tx_end = 1;
+  }
+
+  return;
+}
+
+//---------------------------------------------------
+int neopixel_init(int gpioNum, rmt_channel_t channel)
+{
+	RMTchannel = channel;
+
+	DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_RMT_CLK_EN);
+	DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_RMT_RST);
+
+	esp_err_t res = rmt_set_pin(RMTchannel, RMT_MODE_TX, (gpio_num_t)gpioNum);
+	if (res != ESP_OK) return res;
+
+	RMT.apb_conf.fifo_mask = 1;						//enable memory access, instead of FIFO mode.
+	RMT.apb_conf.mem_tx_wrap_en = 1;				//wrap around when hitting end of buffer
+	RMT.conf_ch[channel].conf0.div_cnt = DIVIDER;
+	RMT.conf_ch[channel].conf0.mem_size = 1;
+	RMT.conf_ch[channel].conf0.carrier_en = 0;
+	RMT.conf_ch[channel].conf0.carrier_out_lv = 1;
+	RMT.conf_ch[channel].conf0.mem_pd = 0;
+
+	RMT.conf_ch[channel].conf1.rx_en = 0;
+	RMT.conf_ch[channel].conf1.mem_owner = 0;
+	RMT.conf_ch[channel].conf1.tx_conti_mode = 0;	//loop back mode.
+	RMT.conf_ch[channel].conf1.ref_always_on = 1;	// use apb clock: 80M
+	RMT.conf_ch[channel].conf1.idle_out_en = 1;
+	RMT.conf_ch[channel].conf1.idle_out_lv = 0;
+
+	RMT.tx_lim_ch[RMTchannel].limit = MAX_PULSES;
+	RMT.int_ena.ch0_tx_thr_event = 1;
+	RMT.int_ena.ch0_tx_end = 1;
+
+	res = esp_intr_alloc(ETS_RMT_INTR_SOURCE, 0, neopixel_handleInterrupt, NULL, &rmt_intr_handle);
+	if (res != ESP_OK) return res;
+
+	if (neopixel_sem == NULL) {
+		neopixel_sem = xSemaphoreCreateBinary();
+		if (neopixel_sem == NULL) return ESP_FAIL;
+	}
+
+	return ESP_OK;
+}
+
+//-----------------------------------------
+void neopixel_deinit(rmt_channel_t channel)
+{
+	if (channel != RMTchannel) return;
+
+	rmt_set_rx_intr_en(channel, 0);
+    rmt_set_err_intr_en(channel, 0);
+    rmt_set_tx_intr_en(channel, 0);
+    rmt_set_tx_thr_intr_en(channel, 0, 0xffff);
+
+    if (rmt_intr_handle) esp_intr_free(rmt_intr_handle);
+
+    if (neopixel_sem) {
+		vSemaphoreDelete(neopixel_sem);
+		neopixel_sem = NULL;
+	}
+}
+
 //--------------------------------
 void np_show(pixel_settings_t *px)
 {
-  rmt_item32_t * pCurrentItem = px->items;
+	uint16_t i;
+	uint8_t bpp = px->nbits/8;
+	neopixel_buf_len = (px->pixel_count * bpp);
+	neopixel_buffer = (uint8_t *) malloc(neopixel_buf_len);
 
-  for (uint16_t i = 0; i < px->pixel_count; i++) {
-    uint32_t p = get_wire_value(px, i);
+	for (i = 0; i < px->pixel_count; i++) {
+		neopixel_buffer[(i * bpp) + 0] = offset_color(px->color_order[0], &px->pixels[i]);
+		neopixel_buffer[(i * bpp) + 1] = offset_color(px->color_order[1], &px->pixels[i]);
+		neopixel_buffer[(i * bpp) + 2] = offset_color(px->color_order[2], &px->pixels[i]);
+		if (bpp > 3) neopixel_buffer[(i * bpp) + 3] = offset_color(px->color_order[3], &px->pixels[i]);
+	}
 
-    for (int j=31; j>=(32-px->nbits); j--) {
-      // 32/24 bits of data represent the red, green, blue and (white) channels. The
-      // value of the 32/24 bits to output is in the variable p. This value must
-      // be written to the RMT subsystem in big-endian format. Iterate through
-      // the pixels MSB to LSB
-      if (p & (1<<j)) {
-        neopixel_mark(pCurrentItem, px);
-      } else {
-        neopixel_space(pCurrentItem, px);
-      }
-      pCurrentItem++;
-    }
-  }
+	neopixel_pos = 0;
+	neopixel_half = 0;
+	neopixel_bpp = bpp;
+	neopixel_px = px;
+	neopixel_half = 0;
 
-  rmt_terminate(pCurrentItem, px);
+	copyToRmtBlock_half();
 
-  ESP_ERROR_CHECK(rmt_write_items(RMT_CHANNEL_0, px->items, px->pixel_count * 32, 1));
+	if (neopixel_pos < neopixel_buf_len) {
+		// Fill the other half of the buffer block
+		copyToRmtBlock_half();
+	}
+
+	RMT.conf_ch[RMTchannel].conf1.mem_rd_rst = 1;
+	RMT.conf_ch[RMTchannel].conf1.tx_start = 1;
+
+	xSemaphoreTake(neopixel_sem, portMAX_DELAY);
+	free(neopixel_buffer);
 }
+
+//==================================================================================================
 
 //---------------------------------
 void np_clear(pixel_settings_t *px)

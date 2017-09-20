@@ -43,11 +43,7 @@
 #include "time.h"
 #include <math.h>
 #include "rom/tjpgd.h"
-#if IDF_USEHEAP
 #include "esp_heap_caps.h"
-#else
-#include "esp_heap_alloc_caps.h"
-#endif
 #include "tftspi.h"
 
 
@@ -208,6 +204,20 @@ static void _drawFastVLine(int16_t x, int16_t y, int16_t h, color_t color) {
 	if ((y + h) > (dispWin.y2+1)) h = dispWin.y2 - y + 1;
 	if (h == 0) h = 1;
 	TFT_pushColorRep(x, y, x, y+h-1, color, (uint32_t)h);
+}
+
+//---------------------------------------------------------------------------
+static void _drawFastVLine_(int16_t x, int16_t y, int16_t h, color_t color) {
+	// clipping
+	if ((x < dispWin.x1) || (x > dispWin.x2) || (y > dispWin.y2)) return;
+	if (y < dispWin.y1) {
+		h -= (dispWin.y1 - y);
+		y = dispWin.y1;
+	}
+	if (h < 0) h = 0;
+	if ((y + h) > (dispWin.y2+1)) h = dispWin.y2 - y + 1;
+	if (h == 0) h = 1;
+	TFT_pushColorRep_nocs(x, y, x, y+h-1, color, (uint32_t)h);
 }
 
 //--------------------------------------------------------------------------
@@ -410,25 +420,33 @@ static void fillCircleHelper(int16_t x0, int16_t y0, int16_t r,	uint8_t cornerna
 	int16_t x = 0;
 	int16_t y = r;
 	int16_t ylm = x0 - r;
+	uint8_t v = 0;
+	if (cornername == 3) v = 1;
 
+	disp_select();
 	while (x < y) {
 		if (f >= 0) {
-			if (cornername & 0x1) _drawFastVLine(x0 + y, y0 - x, 2 * x + 1 + delta, color);
-			if (cornername & 0x2) _drawFastVLine(x0 - y, y0 - x, 2 * x + 1 + delta, color);
+			if (cornername & 0x1) _drawFastVLine_(x0 + y, y0 - x, 2 * x + 1 + delta, color);
+			if (cornername & 0x2) _drawFastVLine_(x0 - y, y0 - x, 2 * x + 1 + delta, color);
 			ylm = x0 - y;
 			y--;
 			ddF_y += 2;
 			f += ddF_y;
+		}
+		if (v) {
+			_drawFastVLine_(x0 - x, y0 - y, 2 * y + 1 + delta, color);
+			v = 0;
 		}
 		x++;
 		ddF_x += 2;
 		f += ddF_x;
 
 		if ((x0 - x) > ylm) {
-			if (cornername & 0x1) _drawFastVLine(x0 + x, y0 - y, 2 * y + 1 + delta, color);
-			if (cornername & 0x2) _drawFastVLine(x0 - x, y0 - y, 2 * y + 1 + delta, color);
+			if (cornername & 0x1) _drawFastVLine_(x0 + x, y0 - y, 2 * y + 1 + delta, color);
+			if (cornername & 0x2) _drawFastVLine_(x0 - x, y0 - y, 2 * y + 1 + delta, color);
 		}
 	}
+	disp_deselect();
 }
 
 // Draw a rounded rectangle
@@ -653,7 +671,6 @@ void TFT_fillCircle(int16_t x, int16_t y, int radius, color_t color) {
 	x += dispWin.x1;
 	y += dispWin.y1;
 
-	_drawFastVLine(x, y-radius, 2*radius+1, color);
 	fillCircleHelper(x, y, radius, 3, 0, color);
 }
 
@@ -1583,11 +1600,7 @@ static int printProportionalChar(int x, int y) {
 
 		// === buffer Glyph data for faster sending ===
 		len = char_width * cfont.y_size;
-		#if IDF_USEHEAP
 		color_t *color_line = heap_caps_malloc(len*3, MALLOC_CAP_DMA);
-		#else
-		color_t *color_line = pvPortMallocCaps(len*3, MALLOC_CAP_DMA);
-		#endif
 		if (color_line) {
 			// fill with background color
 			for (int n = 0; n < len; n++) {
@@ -1673,11 +1686,7 @@ static void printChar(uint8_t c, int x, int y) {
 	if ((font_buffered_char) && (!font_transparent)) {
 		// === buffer Glyph data for faster sending ===
 		len = cfont.x_size * cfont.y_size;
-		#if IDF_USEHEAP
 		color_t *color_line = heap_caps_malloc(len*3, MALLOC_CAP_DMA);
-		#else
-		color_t *color_line = pvPortMallocCaps(len*3, MALLOC_CAP_DMA);
-		#endif
 		if (color_line) {
 			// fill with background color
 			for (int n = 0; n < len; n++) {
@@ -2468,20 +2477,12 @@ void TFT_jpg_image(int x, int y, uint8_t scale, char *fname, uint8_t *buf, int s
 			dev.x = x;
 			dev.y = y;
 
-			#if IDF_USEHEAP
 			dev.linbuf[0] = heap_caps_malloc(JPG_IMAGE_LINE_BUF_SIZE*3, MALLOC_CAP_DMA);
-			#else
-			dev.linbuf[0] = pvPortMallocCaps(JPG_IMAGE_LINE_BUF_SIZE*3, MALLOC_CAP_DMA);
-			#endif
 			if (dev.linbuf[0] == NULL) {
 				if (image_debug) printf("Error allocating line buffer\r\n");
 				goto exit;
 			}
-			#if IDF_USEHEAP
 			dev.linbuf[1] = heap_caps_malloc(JPG_IMAGE_LINE_BUF_SIZE*3, MALLOC_CAP_DMA);
-			#else
-			dev.linbuf[1] = pvPortMallocCaps(JPG_IMAGE_LINE_BUF_SIZE*3, MALLOC_CAP_DMA);
-			#endif
 			if (dev.linbuf[0] == NULL) {
 				if (image_debug) printf("Error allocating line buffer\r\n");
 				goto exit;
@@ -2644,22 +2645,14 @@ int TFT_bmp_image(int x, int y, uint8_t scale, char *fname, uint8_t *imgbuf, int
 	}
 
 	// ** Allocate memory for 2 lines of image pixels
-	#if IDF_USEHEAP
 	line_buf[0] = heap_caps_malloc(img_xsize*3, MALLOC_CAP_DMA);
-	#else
-	line_buf[0] = pvPortMallocCaps(img_xsize*3, MALLOC_CAP_DMA);
-	#endif
 	if (line_buf[0] == NULL) {
 	    sprintf(err_buf, "allocating line buffer #1");
 		err=-12;
 		goto exit;
 	}
 
-	#if IDF_USEHEAP
 	line_buf[1] = heap_caps_malloc(img_xsize*3, MALLOC_CAP_DMA);
-	#else
-	line_buf[1] = pvPortMallocCaps(img_xsize*3, MALLOC_CAP_DMA);
-	#endif
 	if (line_buf[1] == NULL) {
 	    sprintf(err_buf, "allocating line buffer #2");
 		err=-13;
