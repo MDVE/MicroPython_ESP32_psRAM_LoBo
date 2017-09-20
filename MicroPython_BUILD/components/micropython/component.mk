@@ -18,6 +18,13 @@ ifneq ($(wildcard $(IDF_PATH)/components/driver/sdspi_host.*),)
 CFLAGS += -DIDF_HAS_SDSPIHOST=1
 endif
 
+CFLAGS_MOD =
+OBJ_ESPIDF =
+SRC_MOD =
+DRIVERS_SRC_C =
+QSTR_AUTOGEN_DISABLE =
+FROZEN_EXTRA_DEPS =
+
 include $(COMPONENT_PATH)/py/mkenv.mk
 
 # qstr definitions (must come before including py.mk)

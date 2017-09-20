@@ -75,14 +75,49 @@ if [ "${arg}" == "" ]; then
 fi
 #---------------------------------------------------------------------------------------------------------------------
 
+# ----------------------
+# Check Operating System
+# ----------------------
 unameOut="$(uname -s)"
 case "${unameOut}" in
     Linux*)     machine=Linux;;
     Darwin*)    machine=MacOS;;
-    CYGWIN*)    machine=Cygwin;;
-    MINGW*)     machine=MinGw;;
-    *)          machine="UNKNOWN:${unameOut}"
+    CYGWIN*)    machine=Win;;
+    MINGW*)     machine=Win;;
+    *)          machine=UNKNOWN
 esac
+
+if [ "${machine}" == "UNKNOWN" ]; then
+    if [ "${machine:0:5}" == "MINGW" ]; then
+        machine=Win
+    fi
+fi
+
+if [ "${machine}" == "UNKNOWN" ]; then
+    echo ""
+    echo "Unsupported OS detected."
+    echo ""
+    exit 1
+fi
+
+if [ "${machine}" == "Win" ]; then
+    if [ ! -f "/usr/bin/tar.exe" ]; then
+        echo "Installing tar..."
+        pacman -S --noconfirm tar > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "OK."
+        else
+            echo "FAILED"
+            exit 1
+        fi
+    fi
+    if [ ! -f "/usr/bin/tar.exe" ]; then
+        echo ""
+        echo "'tar.exe' needed for toolchain extraction not found!"
+        echo ""
+        exit 1
+    fi
+fi
 
 BUILD_BASE_DIR=${PWD}
 
@@ -133,8 +168,8 @@ if [ ! -f "${TOOLS_VER}" ]; then
     echo "Removing old tools versions and cleaning build..."
     # Remove directories from previous version
     if [ -d "esp-idf" ]; then
-        rm -rf esp-idf/
-        rmdir esp-idf
+        rm -rf esp-idf/ > /dev/null 2>&1
+        rmdir esp-idf > /dev/null 2>&1
     fi
     if [ -d "xtensa-esp32-elf" ]; then
         rm -rf xtensa-esp32-elf/ > /dev/null 2>&1
@@ -166,7 +201,7 @@ if [ ! -d "esp-idf" ]; then
     fi
 fi
 if [ ! -d "xtensa-esp32-elf" ]; then
-    echo "unpacking 'xtensa-esp32-elf'"
+    echo "unpacking ${machine}/xtensa-esp32-elf"
     tar -xf ${machine}/xtensa-esp32-elf.tar.xz > /dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo "unpacking 'xtensa-esp32-elf' FAILED"
@@ -228,11 +263,11 @@ if [ "${arg}" == "makefs" ] || [ "${arg}" == "flashfs" ] || [ "${arg}" == "copyf
     # ###########################################################################
 fi
 
-BUILD_TYPE=" with psRAM support"
+BUILD_TYPE=""
 if [ -f "sdkconfig" ]; then
-    SDK_PSRAM=$(grep -e CONFIG_MEMMAP_SPIRAM_ENABLE=y sdkconfig)
-    if [ "${SDK_PSRAM}" == "" ]; then
-        BUILD_TYPE=""
+    SDK_PSRAM=$(grep -e CONFIG_SPIRAM_SUPPORT=y sdkconfig)
+    if [ "${SDK_PSRAM}" == "CONFIG_SPIRAM_SUPPORT=y" ]; then
+        BUILD_TYPE=" with psRAM support"
     fi
 fi
 
@@ -249,7 +284,7 @@ echo "Building MicroPython for ESP32${BUILD_TYPE}"
 echo ""
 cd ${BUILD_BASE_DIR}
 
-#export HOST_PLATFORM=linux
+export HOST_PLATFORM=${machine}
 export CROSS_COMPILE=xtensa-esp32-elf-
 
 # ########################################################

@@ -60,7 +60,11 @@ STRIP = $(CROSS_COMPILE)strip
 #endif
 
 MAKE_FROZEN = $(TOP)/tools/make-frozen.py
+ifeq ($(HOST_PLATFORM), "Win")
+MPY_CROSS = $(TOP)/mpy-cross/mpy-cross.exe
+else
 MPY_CROSS = $(TOP)/mpy-cross/mpy-cross
+endif
 MPY_TOOL = $(TOP)/tools/mpy-tool.py
 
 all:

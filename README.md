@@ -8,6 +8,8 @@
 
 **As of Sep 18, 2017 full support for psRAM is included into esp-idf and xtensa toolchain**
 
+*Building on* **Linux**, **MacOS** *and* **Windows** *is supported*
+
 ---
 
 MicroPython works great on ESP32, but the most serious issue is still (as on most other MicroPython boards) limited amount of free memory.
