@@ -182,6 +182,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(machine_neopixel_clear_obj, machine_neopixel_clear);
 STATIC mp_obj_t machine_neopixel_show(mp_obj_t self_in)
 {
     machine_neopixel_obj_t *self = self_in;
+    np_check(self);
 
    	MP_THREAD_GIL_EXIT();
 	np_show(&self->px);
