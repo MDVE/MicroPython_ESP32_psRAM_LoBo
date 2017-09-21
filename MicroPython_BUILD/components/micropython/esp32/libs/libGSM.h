@@ -3,14 +3,18 @@
  *
 */
 
-
 #ifndef _LIBGSM_H_
 #define _LIBGSM_H_
+
+#include "sdkconfig.h"
+
+#ifdef CONFIG_MICROPY_USE_GSM
 
 #define GSM_STATE_DISCONNECTED	0
 #define GSM_STATE_CONNECTED		1
 #define GSM_STATE_IDLE			89
 #define GSM_STATE_FIRSTINIT		98
+#define GSM_MAX_NAME_LEN		32
 
 
 typedef struct
@@ -30,14 +34,15 @@ typedef struct
 	SMS_Msg	*messages;
 }SMS_Messages;
 
+
 /*
  * Create GSM/PPPoS task if not already created
  * Initialize GSM and connect to Internet
  * Handle all PPPoS requests
  * Disconnect/Reconnect from/to Internet on user request
  */
-//==============
-int ppposInit();
+//========================================================================
+int ppposInit(int tx, int rx, int bdr, char *user, char *pass, char *apn);
 
 /*
  * Disconnect from Internet
@@ -106,5 +111,6 @@ void smsRead(SMS_Messages *SMSmesg, int sort);
  */
 int smsDelete(int idx);
 
+#endif
 
 #endif

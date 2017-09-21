@@ -6,6 +6,11 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
  */
+
+#include "sdkconfig.h"
+
+#ifdef CONFIG_MICROPY_USE_GSM
+
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,13 +24,9 @@
 #include "netif/ppp/ppp.h"
 #include "lwip/pppapi.h"
 
-#include "libGSM.h"
+#include "libs/libGSM.h"
 
-
-// === GSM configuration that you can set via 'make menuconfig'. ===
-#define UART_GPIO_TX CONFIG_GSM_TX
-#define UART_GPIO_RX CONFIG_GSM_RX
-#define UART_BDRATE CONFIG_GSM_BDRATE
+extern int MainTaskCore;
 
 #ifdef CONFIG_GSM_DEBUG
 #define GSM_DEBUG 1
@@ -38,7 +39,6 @@
 
 #define PPPOS_CLIENT_STACK_SIZE 1024*3
 
-
 // shared variables, use mutex to access them
 static uint8_t gsm_status = GSM_STATE_FIRSTINIT;
 static int do_pppos_connect = 1;
@@ -48,10 +48,15 @@ static uint8_t pppos_task_started = 0;
 static uint8_t gsm_rfOff = 0;
 
 // local variables
+static TaskHandle_t PPPoSTaskHandle = NULL;
 static QueueHandle_t pppos_mutex = NULL;
-const char *PPP_User = CONFIG_GSM_INTERNET_USER;
-const char *PPP_Pass = CONFIG_GSM_INTERNET_PASSWORD;
+static char PPP_User[GSM_MAX_NAME_LEN] = {0};
+static char PPP_Pass[GSM_MAX_NAME_LEN] = {0};
+static char GSM_APN[GSM_MAX_NAME_LEN] = {0};
 static int uart_num = UART_NUM_1;
+static int gsm_pin_tx = UART_PIN_NO_CHANGE;
+static int gsm_pin_rx = UART_PIN_NO_CHANGE;
+static int gsm_baudrate = 115200;
 
 static uint8_t tcpip_adapter_initialized = 0;
 
@@ -490,6 +495,7 @@ static void pppos_client_task()
 	pppos_task_started = 1;
 	xSemaphoreGive(pppos_mutex);
 
+	char PPP_ApnATReq[strlen(GSM_APN)+24];
     // Allocate receive buffer
     char* data = (char*) malloc(BUF_SIZE);
     if (data == NULL) {
@@ -499,14 +505,12 @@ static void pppos_client_task()
     	goto exit;
     }
 
-    if (gpio_set_direction(UART_GPIO_TX, GPIO_MODE_OUTPUT)) goto exit;
-	if (gpio_set_direction(UART_GPIO_RX, GPIO_MODE_INPUT)) goto exit;
-	if (gpio_set_pull_mode(UART_GPIO_RX, GPIO_PULLUP_ONLY)) goto exit;
+    if (gpio_set_direction(gsm_pin_tx, GPIO_MODE_OUTPUT)) goto exit;
+	if (gpio_set_direction(gsm_pin_rx, GPIO_MODE_INPUT)) goto exit;
+	if (gpio_set_pull_mode(gsm_pin_rx, GPIO_PULLUP_ONLY)) goto exit;
 
-	char PPP_ApnATReq[sizeof(CONFIG_GSM_APN)+24];
-	
 	uart_config_t uart_config = {
-			.baud_rate = UART_BDRATE,
+			.baud_rate = gsm_baudrate,
 			.data_bits = UART_DATA_8_BITS,
 			.parity = UART_PARITY_DISABLE,
 			.stop_bits = UART_STOP_BITS_1,
@@ -516,11 +520,11 @@ static void pppos_client_task()
 	//Configure UART1 parameters
 	if (uart_param_config(uart_num, &uart_config)) goto exit;
 	//Set UART1 pins(TX, RX, RTS, CTS)
-	if (uart_set_pin(uart_num, UART_GPIO_TX, UART_GPIO_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE)) goto exit;
+	if (uart_set_pin(uart_num, gsm_pin_tx, gsm_pin_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE)) goto exit;
 	if (uart_driver_install(uart_num, BUF_SIZE * 2, BUF_SIZE * 2, 0, NULL, 0)) goto exit;
 
 	// Set APN from config
-	sprintf(PPP_ApnATReq, "AT+CGDCONT=1,\"IP\",\"%s\"\r\n", CONFIG_GSM_APN);
+	sprintf(PPP_ApnATReq, "AT+CGDCONT=1,\"IP\",\"%s\"\r\n", GSM_APN);
 	cmd_APN.cmd = PPP_ApnATReq;
 	cmd_APN.cmdSize = strlen(PPP_ApnATReq);
 
@@ -715,8 +719,8 @@ exit:
 	vTaskDelete(NULL);
 }
 
-//=============
-int ppposInit()
+//=======================================================================
+int ppposInit(int tx, int rx, int bdr, char *user, char *pass, char *apn)
 {
 	if (pppos_mutex != NULL) xSemaphoreTake(pppos_mutex, PPPOSMUTEX_TIMEOUT);
 	do_pppos_connect = 1;
@@ -725,6 +729,13 @@ int ppposInit()
 	if (pppos_mutex != NULL) xSemaphoreGive(pppos_mutex);
 
 	if (task_s == 0) {
+		gsm_pin_tx = tx;
+		gsm_pin_rx = rx;
+		gsm_baudrate = bdr;
+		strncpy(PPP_User, user, GSM_MAX_NAME_LEN);
+		strncpy(PPP_Pass, pass, GSM_MAX_NAME_LEN);
+		strncpy(GSM_APN, apn, GSM_MAX_NAME_LEN);
+
 		if (pppos_mutex == NULL) pppos_mutex = xSemaphoreCreateMutex();
 		if (pppos_mutex == NULL) return 0;
 
@@ -732,7 +743,9 @@ int ppposInit()
 			tcpip_adapter_init();
 			tcpip_adapter_initialized = 1;
 		}
-		xTaskCreate(&pppos_client_task, "pppos_client_task", PPPOS_CLIENT_STACK_SIZE, NULL, 10, NULL);
+		xTaskCreatePinnedToCore(&pppos_client_task, "GSM_PPPoS", PPPOS_CLIENT_STACK_SIZE, NULL, CONFIG_MICROPY_TASK_PRIORITY, &PPPoSTaskHandle, MainTaskCore);
+		if (PPPoSTaskHandle == NULL) return 0;
+
 		while (task_s == 0) {
 			vTaskDelay(10 / portTICK_RATE_MS);
 			xSemaphoreTake(pppos_mutex, PPPOSMUTEX_TIMEOUT);
@@ -1106,3 +1119,4 @@ int smsDelete(int idx)
 	return atCmd_waitResponse(buf, GSM_OK_Str, NULL, -1, 5000, NULL, 0);
 }
 
+#endif

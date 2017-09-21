@@ -245,6 +245,7 @@ LIBS_SRC_C = $(addprefix esp32/libs/,\
 	esp_rmt.c \
 	telnet.c \
 	ftp.c \
+	libGSM.c \
 	)
 
 ifeq ($(MICROPY_PY_BTREE),1)

@@ -169,7 +169,7 @@ STATIC mp_obj_t machine_pin_obj_init_helper(const machine_pin_obj_t *self, size_
 
     // configure pull
     if (args[ARG_pull].u_obj != mp_const_none) {
-        if ((self->id >= 34) || (self->id <= 39)) {
+        if (self->id >= 34) {
         	mp_raise_ValueError("pins 34~39 do not have pull-up or pull-down circuitry");
         }
         gpio_set_pull_mode(self->id, mp_obj_get_int(args[ARG_pull].u_obj));

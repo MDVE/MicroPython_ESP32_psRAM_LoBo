@@ -217,6 +217,20 @@ menu "MicroPython"
 	        help
 	        Include Mqtt module into build
 	
+	    config MICROPY_USE_GSM
+	        bool "Use GSM module"
+	        depends on PPP_SUPPORT
+	        default n
+	        help
+	        Include GSM module and PPPoS support into build
+	
+	    config GSM_DEBUG
+	        bool "Enable GSM debug messages"
+	        depends on MICROPY_USE_GSM
+	        default n
+	        help
+	        Enable GSM debug messages
+	
 	    menu "MQTT Configuration"
 	        depends on MICROPY_USE_MQTT
 		    config MQTT_PROTOCOL_311
