@@ -320,7 +320,7 @@ STATIC const mp_arg_t machine_dht_init_allowed_args[] = {
 //------------------------------------------------------------------------------------------------------------
 mp_obj_t machine_dht_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
-	enum { ARG_pin, ARG_type, ARG_speed, ARG_sda, ARG_scl };
+	enum { ARG_pin, ARG_type };
 
 	mp_arg_val_t args[MP_ARRAY_SIZE(machine_dht_init_allowed_args)];
 	mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(machine_dht_init_allowed_args), machine_dht_init_allowed_args, args);

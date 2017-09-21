@@ -4,14 +4,13 @@
 #include <math.h>
 
 #include "libs/neopixel.h"
-
+#include "esp_log.h"
 
 static xSemaphoreHandle neopixel_sem = NULL;
 static intr_handle_t rmt_intr_handle = NULL;
 static rmt_channel_t RMTchannel = RMT_CHANNEL_0;
-static uint16_t neopixel_pos, neopixel_buf_len, neopixel_half, neopixel_bufIsDirty;
+static uint16_t neopixel_pos, neopixel_buf_len, neopixel_half, neopixel_bufIsDirty, neopixel_termsent;
 static pixel_settings_t *neopixel_px;
-static rmt_item32_t RMT_Items[MAX_PULSES*2+1];
 static uint8_t *neopixel_buffer = NULL;
 static uint8_t neopixel_bpp;
 
@@ -118,17 +117,28 @@ static void copyToRmtBlock_half()
 	// This fills half an RMT block
 	// When wrap around is happening, we want to keep the inactive half of the RMT block filled
 	uint16_t i, offset, len, byteval;
-
+	rmt_item32_t CurrentItem;
 	offset = neopixel_half * MAX_PULSES;
 	neopixel_half = !neopixel_half;
+	int j;
 
 	len = neopixel_buf_len - neopixel_pos;
 	if (len > (MAX_PULSES / 8)) len = (MAX_PULSES / 8);
+	//ESP_EARLY_LOGD("RMT", "Write half: buflen=%d ofs=%d pos=%d len=%d dty=%d", neopixel_buf_len, offset, neopixel_pos, len, neopixel_bufIsDirty);
 
 	if (!len) {
-	if (!neopixel_bufIsDirty) return;
+		if (!neopixel_bufIsDirty) return;
 		// Clear the channel's data block and return
-		for (i = 0; i < MAX_PULSES; i++) {
+		j = 0;
+		if (!neopixel_termsent) {
+			//ESP_EARLY_LOGD("RMT", "Terminate #1");
+			i++;
+			rmt_terminate(&CurrentItem, neopixel_px);
+			RMTMEM.chan[RMTchannel].data32[0].val = CurrentItem.val;
+			neopixel_termsent = 1;
+			j++;
+		}
+		for (i = j; i < MAX_PULSES; i++) {
 			RMTMEM.chan[RMTchannel].data32[i + offset].val = 0;
 		}
 		neopixel_bufIsDirty = 0;
@@ -136,25 +146,24 @@ static void copyToRmtBlock_half()
 	}
 	neopixel_bufIsDirty = 1;
 
-	rmt_item32_t * pCurrentItem;
-	if (neopixel_half) pCurrentItem = RMT_Items + (sizeof(rmt_item32_t) * MAX_PULSES);
-	else pCurrentItem = RMT_Items;
-
 	// Populate RMT bit buffer
 	for (i = 0; i < len; i++) {
 		byteval = neopixel_buffer[i+neopixel_pos];
 
 		// Shift bits out, MSB first, setting RMTMEM.chan[n].data32[x] to the rmtPulsePair value corresponding to the buffered bit value
-		for (int j=7; j>=0; j--) {
-			if (byteval & (1<<j)) neopixel_mark(pCurrentItem, neopixel_px);
-			else neopixel_space(pCurrentItem, neopixel_px);
+		for (j=7; j>=0; j--) {
+			if (byteval & (1<<j)) neopixel_mark(&CurrentItem, neopixel_px);
+			else neopixel_space(&CurrentItem, neopixel_px);
 
-			RMTMEM.chan[RMTchannel].data32[i * 8 + offset + (7-j)].val = pCurrentItem->val;
-			pCurrentItem++;
+			RMTMEM.chan[RMTchannel].data32[(i * 8) + offset + (7-j)].val = CurrentItem.val;
 		}
-		if (i + neopixel_pos == neopixel_buf_len - 1) {
-			rmt_terminate(pCurrentItem, neopixel_px);
-			RMTMEM.chan[RMTchannel].data32[i * 8 + offset + 7].val = pCurrentItem->val;
+		if ((i < ((MAX_PULSES / 8)-1)) && (i + neopixel_pos == neopixel_buf_len - 1)) {
+			//ESP_EARLY_LOGD("RMT", "Terminate #2");
+			i++;
+			rmt_terminate(&CurrentItem, neopixel_px);
+			RMTMEM.chan[RMTchannel].data32[(i * 8) + offset + 7].val = CurrentItem.val;
+			neopixel_termsent = 1;
+			break;
 		}
 	}
 	// Clear the remainder of the channel's data not set above
@@ -166,19 +175,22 @@ static void copyToRmtBlock_half()
 	return;
 }
 
-
 //-------------------------------------------------------
 static void IRAM_ATTR neopixel_handleInterrupt(void *arg)
 {
   portBASE_TYPE taskAwoken = 0;
 
-  if (RMT.int_st.ch0_tx_thr_event) {
+  uint32_t tx_thr_event_mask = 0x01000000 << RMTchannel;
+  uint32_t tx_end_event_mask = 1 << (RMTchannel*3);
+  uint32_t intr_st = RMT.int_st.val;
+
+  if (intr_st & tx_thr_event_mask) {
     copyToRmtBlock_half();
-    RMT.int_clr.ch0_tx_thr_event = 1;
+    RMT.int_clr.val = tx_thr_event_mask;
   }
-  else if (RMT.int_st.ch0_tx_end && neopixel_sem) {
+  else if ((intr_st & tx_end_event_mask) && neopixel_sem) {
     xSemaphoreGiveFromISR(neopixel_sem, &taskAwoken);
-    RMT.int_clr.ch0_tx_end = 1;
+    RMT.int_clr.val = tx_end_event_mask;
   }
 
   return;
@@ -188,6 +200,8 @@ static void IRAM_ATTR neopixel_handleInterrupt(void *arg)
 int neopixel_init(int gpioNum, rmt_channel_t channel)
 {
 	RMTchannel = channel;
+	uint32_t tx_thr_event_mask = 0x01000000 << RMTchannel;
+	uint32_t tx_end_event_mask = 1 << (RMTchannel*3);
 
 	DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_RMT_CLK_EN);
 	DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_RMT_RST);
@@ -211,8 +225,7 @@ int neopixel_init(int gpioNum, rmt_channel_t channel)
 	RMT.conf_ch[channel].conf1.idle_out_lv = 0;
 
 	RMT.tx_lim_ch[RMTchannel].limit = MAX_PULSES;
-	RMT.int_ena.ch0_tx_thr_event = 1;
-	RMT.int_ena.ch0_tx_end = 1;
+	RMT.int_ena.val = tx_thr_event_mask | tx_end_event_mask;
 
 	res = esp_intr_alloc(ETS_RMT_INTR_SOURCE, 0, neopixel_handleInterrupt, NULL, &rmt_intr_handle);
 	if (res != ESP_OK) return res;
@@ -263,6 +276,7 @@ void np_show(pixel_settings_t *px)
 	neopixel_bpp = bpp;
 	neopixel_px = px;
 	neopixel_half = 0;
+	neopixel_termsent = 0;
 
 	copyToRmtBlock_half();
 

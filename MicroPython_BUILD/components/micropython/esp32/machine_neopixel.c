@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "libs/esp_rmt.h"
 #include "libs/neopixel.h"
 
 #include "py/nlr.h"
@@ -63,7 +64,7 @@ STATIC void machine_neopixel_print(const mp_print_t *print, mp_obj_t self_in, mp
 
     if (self->px.pixels != NULL) {
 		mp_printf(print, "Neopixel(Pin=%d, Pixels: %d, RMTChannel=%d, PixBufLen=%u\n", self->gpio_num, self->px.pixel_count, self->channel, sizeof(pixel_t) * self->px.pixel_count);
-		mp_printf(print, "         Timings ns: BIT1: (%d, %d, %d, %d), BIT0: (%d, %d, %d, %d), RST: %d\n         )",
+		mp_printf(print, "         Timings (nano s): BIT1(lev,dur): [(%d, %d), (%d, %d)], BIT0(lev,dur): [(%d, %d), (%d, %d)], RST(dur): %d\n)",
 				self->px.timings.mark.level0, self->px.timings.mark.duration0 * RMT_PERIOD_NS, self->px.timings.mark.level1, self->px.timings.mark.duration1 * RMT_PERIOD_NS,
 				self->px.timings.space.level0, self->px.timings.space.duration0 * RMT_PERIOD_NS, self->px.timings.space.level1, self->px.timings.space.duration1 * RMT_PERIOD_NS,
 				(self->px.timings.reset.duration0 + self->px.timings.reset.duration1) * RMT_PERIOD_NS);
@@ -76,30 +77,29 @@ STATIC void machine_neopixel_print(const mp_print_t *print, mp_obj_t self_in, mp
 //------------------------------------------------------------------------------------------------------------------------
 STATIC mp_obj_t machine_neopixel_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
-	enum { ARG_pin, ARG_pixels, ARG_type, ARG_rmtchan };
+	enum { ARG_pin, ARG_pixels, ARG_type };
 	//-----------------------------------------------------
 	const mp_arg_t machine_neopixel_init_allowed_args[] = {
 			{ MP_QSTR_pin,     MP_ARG_REQUIRED | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
 			{ MP_QSTR_pixels,  MP_ARG_REQUIRED | MP_ARG_INT, {.u_int = 4} },
 			{ MP_QSTR_type,                      MP_ARG_INT, {.u_int = 0} },
-			{ MP_QSTR_rmtchan, MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = RMT_CHANNEL_0} },
 	};
 
 	mp_arg_val_t args[MP_ARRAY_SIZE(machine_neopixel_init_allowed_args)];
 	mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(machine_neopixel_init_allowed_args), machine_neopixel_init_allowed_args, args);
 
+    int rmtchan = platform_rmt_allocate(1);
+    if (rmtchan < 0) {
+    	mp_raise_ValueError("Cannot acquire RMT channel");
+    }
+
     int8_t pin = machine_pin_get_id(args[ARG_pin].u_obj);
     int pixels = args[ARG_pixels].u_int;
-    int rmtchan = args[ARG_rmtchan].u_int;
     int wstype = args[ARG_type].u_int;
 
     // Check type
     if ((wstype < 0) || (wstype > 4)) {
     	mp_raise_ValueError("Wrong type");
-    }
-    // Check the rmt channel
-    if (rmtchan < 0 || rmtchan > 7) {
-    	mp_raise_ValueError("RMT interface channel not valid, should be 0~7");
     }
     // Check pin
     if (pin > 31) {
@@ -158,6 +158,7 @@ STATIC mp_obj_t machine_neopixel_deinit(mp_obj_t self_in)
 	if (self->px.pixels) m_del(pixel_t, self->px.pixels, 1);
     self->px.pixels = NULL;
     neopixel_deinit(self->channel);
+    platform_rmt_release(self->channel );
 
     return mp_const_none;
 }
