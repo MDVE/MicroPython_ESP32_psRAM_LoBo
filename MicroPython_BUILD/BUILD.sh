@@ -16,7 +16,7 @@
 # ./BUILD copyfs        - flash prebuilt spiffs image to ESP32
 
 
-TOOLS_VER=ver20170920.id
+TOOLS_VER=ver20170923.id
 
 #---------------------------------------------------------------------------------------------------------------------
 # Check parameters
@@ -50,6 +50,22 @@ if [ "${opt:0:2}" == "-j" ]; then
     fi
 
 elif [ "${opt}" == "makefs" ] || [ "${opt}" == "flashfs" ] || [ "${opt}" == "copyfs" ]; then
+    if [ "$2" == "verbose" ]; then
+        export MP_SHOW_PROGRESS=yes
+    fi
+    arg=${opt}
+    opt="none"
+
+elif [ "${opt}" == "makefatfs" ] || [ "${opt}" == "flashfatfs" ] || [ "${opt}" == "copyfatfs" ]; then
+    if [ ! -f "build/include/sdkconfig.h" ]; then
+        echo ""
+        echo "Run './BUILD menuconfig' first."
+        echo ""
+        exit 1
+    fi
+    if [ "$2" == "verbose" ]; then
+        export MP_SHOW_PROGRESS=yes
+    fi
     arg=${opt}
     opt="none"
 
@@ -117,6 +133,11 @@ if [ "${machine}" == "Win" ]; then
         echo ""
         exit 1
     fi
+	MK_SPIFFS_BIN="mkspiffs.exe"
+	MK_FATFS_BIN="mkfatfs.exe"
+else
+MK_SPIFFS_BIN="mkspiffs"
+MK_FATFS_BIN="mkfatfs"
 fi
 
 BUILD_BASE_DIR=${PWD}
@@ -185,10 +206,12 @@ if [ ! -f "${TOOLS_VER}" ]; then
     rm -f ${BUILD_BASE_DIR}/components/micropython/mpy-cross/mpy-cross.exe > /dev/null 2>&1
     rm -f ${BUILD_BASE_DIR}/components/mkspiffs/src/mkspiffs > /dev/null 2>&1
     rm -f ${BUILD_BASE_DIR}/components/mkspiffs/src/mkspiffs.exe > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/mkfatfs/src/mkfatfs > /dev/null 2>&1
+    rm -f ${BUILD_BASE_DIR}/components/mkfatfs/src/mkfatfs.exe > /dev/null 2>&1
     # remove build directory and configs
     rm -f ${BUILD_BASE_DIR}/sdkconfig > /dev/null 2>&1
     rm -f ${BUILD_BASE_DIR}/sdkconfig.old > /dev/null 2>&1
-    rm -rf ${BUILD_BASE_DIR}/build/* > /dev/null 2>&1
+    rm -rf ${BUILD_BASE_DIR}/build/ > /dev/null 2>&1
     rmdir ${BUILD_BASE_DIR}/build > /dev/null 2>&1
 fi
 
@@ -247,7 +270,7 @@ if [ "${arg}" == "makefs" ] || [ "${arg}" == "flashfs" ] || [ "${arg}" == "copyf
     # ###########################################################################
     # Build mkspiffs program which creates spiffs image from directory
     # ###########################################################################
-    if [ ! -f "components/mkspiffs/src/mkspiffs" ]; then
+    if [ ! -f "components/mkspiffs/src/${MK_SPIFFS_BIN}" ]; then
         echo "=================="
         echo "Building mkspiffs"
         make -C components/mkspiffs/src > /dev/null 2>&1
@@ -257,6 +280,30 @@ if [ "${arg}" == "makefs" ] || [ "${arg}" == "flashfs" ] || [ "${arg}" == "copyf
         else
             echo "FAILED"
             echo "=================="
+            exit 1
+        fi
+    fi
+    # ###########################################################################
+fi
+
+# -------------------------------
+# Test if mkfatfs has to be build
+# --------------------------------------------------------------------------------------------------
+if [ "${arg}" == "makefatfs" ] || [ "${arg}" == "flashfatfs" ] || [ "${arg}" == "copyfatfs" ]; then
+    # ###########################################################################
+    # Build mkfatfs program which creates fatfs image from directory
+    # ###########################################################################
+    if [ ! -f "components/mkfatfs/src/${MK_FATFS_BIN}" ]; then
+        export BUILD_DIR_BASE=${BUILD_BASE_DIR}/build
+        echo "================="
+        echo "Building mkfatfs [${BUILD_DIR_BASE}]"
+        make -C components/mkfatfs/src > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "OK."
+            echo "================="
+        else
+            echo "FAILED"
+            echo "================="
             exit 1
         fi
     fi
@@ -353,6 +400,21 @@ elif [ "${arg}" == "copyfs" ]; then
     echo "Flashing default SPIFFS image to ESP32..."
     echo "========================================="
     make copyfs
+elif [ "${arg}" == "makefatfs" ]; then
+    echo "======================="
+    echo "Creating FatFS image..."
+    echo "======================="
+    make makefatfs
+elif [ "${arg}" == "flashfatfs" ]; then
+    echo "================================"
+    echo "Flashing FatFS image to ESP32..."
+    echo "================================"
+    make flashfatfs
+elif [ "${arg}" == "copyfatfs" ]; then
+    echo "========================================"
+    echo "Flashing default FatFS image to ESP32..."
+    echo "========================================"
+    make copyfatfs
 else
     echo "================================"
     echo "Building MicroPython firmware..."

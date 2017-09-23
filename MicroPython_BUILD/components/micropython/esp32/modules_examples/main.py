@@ -9,6 +9,7 @@ while not sta_if.isconnected():
     utime.sleep_ms(100)
     tmo -= 1
     if tmo == 0:
+        sta_if.disconnect()
         break
 
 if tmo > 0:

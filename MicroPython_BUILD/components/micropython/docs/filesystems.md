@@ -64,3 +64,57 @@ External file system can be **mounted**/**unmounted** using the following functi
 | - | - |
 | uos.mountsd([chdir]) | Initialize SD card and mount file system on **/sd** directory. If optional argument *chdir* is set to **True**, directory is changed to */sd* after successful mount |
 | uos.umountsd() | Unmount SD card. Directory is changed to */flash* after successful unmount |
+
+
+---
+
+### Using prepared file system images
+
+---
+
+#### Using prepared **SPIFFS** image
+
+**Prepared** image file can be flashed to ESP32, if not flashed, filesystem will be formated after first boot.
+
+
+SFPIFFS **image** can be **prepared** on host and flashed to ESP32:
+
+Copy the files to be included on spiffs into **components/spiffs_image/image/** directory. Subdirectories can also be added.
+
+Execute:
+`./BUILD.sh makefs`
+to create **spiffs image** in **build** directory **without flashing** to ESP32
+
+Execute:
+`./BUILD.sh flashfs`
+to create **spiffs image** in **build** directory and **flash** it to ESP32
+
+Execute:
+`./BUILD.sh copyfs`
+to **flash the default spiffs image** *components/spiffs_image/spiffs_image.img* to ESP32
+
+---
+
+#### Using prepared **FatFS** image
+
+**Prepared** image file can be flashed to ESP32, if not flashed, filesystem will be formated after first boot.
+
+
+FatFS **image** can be **prepared** on host and flashed to ESP32:
+
+Copy the files to be included on spiffs into **components/fatfs_image/image/** directory. Subdirectories can also be added.
+
+Execute:
+`./BUILD.sh makefatfs`
+to create **FatFS image** in **build** directory **without flashing** to ESP32
+
+Execute:
+`./BUILD.sh flashfatfs`
+to create **FatFS image** in **build** directory and **flash** it to ESP32
+
+Execute:
+`./BUILD.sh copyfs`
+to **flash the default FatFS image** *components/fatfs_image/fatfs_image.img* to ESP32
+
+---
+

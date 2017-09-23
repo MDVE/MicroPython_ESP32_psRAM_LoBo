@@ -85,102 +85,14 @@ This way many features not available in standard ESP32 MicroPython are enabled, 
 
 ---
 
-Clone this repository, as it uses some submodules, use --recursive option
-
-```
-git clone --recursive https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo.git
-```
-
-*Xtensa toolchains and esp-idf are provided as tar archives. They will be automatically unpacked on* **first run** *of* **BUILD.sh** *script*
-
-**Goto MicroPython_BUILD directory**
-
----
-
-To change some ESP32 & Micropython options or to create initial **sdkconfig** run:
-```
-./BUILD.sh menuconfig
-```
-
-To build the MicroPython firmware, run:
-```
-./BUILD.sh
-```
-You can use -jn option to make the build process faster. If using too high **n** the build may fail, if that happens, run build again or run without the -j option.
-
-If no errors are detected, you can now flash the MicroPython firmware to your board. Run:
-```
-./BUILD.sh flash
-```
-The board stays in bootloader mode. Run your terminal emulator and reset the board.
-
-You can also run *./BUILD.sh monitor* to use esp-idf's terminal program, it will reset the board automatically.
-
-*After changing* **sdkconfig.h** (via menuconfig) *always run* **./BUILD.sh clean** *before new build*
+Detailed instructions on **MicroPython** building process are available in the [documentation section](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/blob/master/MicroPython_BUILD/components/micropython/docs/build.md).
 
 ---
 
 
-### BUILD.sh
+#### Using file systems
 
-Included *BUILD.sh* script makes **building** MicroPython firmware **easy**.
-
-Usage:
-
-* **./BUILD.sh**               - run the build, create MicroPython firmware
-* **./BUILD.sh -jn**           - run the build on multicore system, much faster build. Replace **n** with the number of cores on your system
-* **./BUILD.sh menuconfig**    - run menuconfig to configure ESP32/MicroPython
-* **./BUILD.sh clean**         - clean the build
-* **./BUILD.sh flash**         - flash MicroPython firmware to ESP32
-* **./BUILD.sh erase**         - erase the whole ESP32 Flash
-* **./BUILD.sh monitor**       - run esp-idf terminal program
-* **./BUILD.sh makefs**        - create SPIFFS file system image which can be flashed to ESP32
-* **./BUILD.sh flashfs**       - flash SPIFFS file system image to ESP32, if not created, create it first
-* **./BUILD.sh copyfs**        - flash the default SPIFFS file system image to ESP32
-
-As default the build process runs silently, without showing compiler output. You can change that by adding **verbose** as the last parameter to *BUILD.sh*.
-
-**To build with psRAM support:**
-
-In menuconfig select **→ Component config → ESP32-specific → Support for external, SPI-connected RAM**
-
-In menuconfig select **→ Component config → ESP32-specific → SPI RAM config → Make RAM allocatable using heap_caps_malloc**
-
-After the successful build the firmware files will be placed into **firmware** directory. **flash.sh** script will also be created.
-
----
-
-
-#### Using **SPIFFS** filesystem
-
-**SPIFFS** filesystem can be used on internal spi Flash instead of **FatFS**.
-
-If you want to use it configure it via **menuconfig**  *→ MicroPython → File systems → Use SPIFFS*
-
-**Prepared** image file can be flashed to ESP32, if not flashed, filesystem will be formated after first boot.
-
-
-SFPIFFS **image** can be **prepared** on host and flashed to ESP32:
-
-Copy the files to be included on spiffs into **components/spiffs_image/image/** directory. Subdirectories can also be added.
-
-Execute:
-
-`./BUILD.sh makefs`
-
-to create **spiffs image** in **build** directory **without flashing** to ESP32
-
-Execute:
-
-`./BUILD.sh flashfs`
-
-to create **spiffs image** in **build** directory and **flash** it to ESP32
-
-Execute:
-
-`./BUILD.sh copyfs`
-
-to **flash default spiffs image** *components/spiffs_image/spiffs_image.img* to ESP32
+Detailed information about using MicroPython file systems are available in the [documentation section](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/blob/master/MicroPython_BUILD/components/micropython/docs/filesystems.md).
 
 ---
 
