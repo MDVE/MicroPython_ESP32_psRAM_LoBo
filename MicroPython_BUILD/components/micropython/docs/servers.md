@@ -32,3 +32,15 @@ Ftp server is implemented as ESP32 task and runs in background (when started).
 | network.ftp.status() | Get the current Ftp server status. The status is returned as tuple of numeric value and string description of Command and Data channels. |
 | network.ftp.stack() | Get the maximum amount of stack used by the Ftp task. The stack size is set at compile time and can be changed in *mpthreadport.h* |
 
+## Notes
+
+* Only one connection to FTP server at the time can be used
+* **Passive** transfer mode must be used
+* Only one data connection can be used, make shure your FTP client does not try to establish multiple data connections
+
+---
+
+Example of FileZilla settings:
+
+![General Settings](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/FileZilla_1.png)
+![Transfer Settings](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/FileZilla_2.png)
