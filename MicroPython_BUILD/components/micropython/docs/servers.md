@@ -37,6 +37,7 @@ Ftp server is implemented as ESP32 task and runs in background (when started).
 * Only one connection to FTP server at the time can be used
 * **Passive** transfer mode must be used
 * Only one data connection can be used, make shure your FTP client does not try to establish multiple data connections
+* No encription is allowed, configure your client to use plain FTP (insecure). That shouldn't be an issue, you will mostly use FTP server in local network.
 
 ---
 
