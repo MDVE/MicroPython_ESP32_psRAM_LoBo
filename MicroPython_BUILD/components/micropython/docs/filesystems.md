@@ -113,7 +113,7 @@ Execute:
 to create **FatFS image** in **build** directory and **flash** it to ESP32
 
 Execute:
-`./BUILD.sh copyfs`
+`./BUILD.sh copyfatfs`
 to **flash the default FatFS image** *components/fatfs_image/fatfs_image.img* to ESP32
 
 ---
