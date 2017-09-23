@@ -40,21 +40,8 @@ In SD mode fixed pins must be used, in SPI mode the pins used for MOSI, MISO, SC
 
 
 SDcard pinout / uSDcard pinout (Contacts view)
-```
- _________________             1 2 3 4 5 6 7 8
-|                 |            _______________
-|                 |           |# # # # # # # #|
-|                 |           |               |
-|                 |           |               |
-|                 |           /               |
-|                 |          /                |
-|                 |         |_                |
-|                 |           |               |
-|                #|          /                |
-|# # # # # # # # /          |                 |
-|_______________/           |                 |
- 8 7 6 5 4 3 2 1 9          |_________________|
-```
+![SDcard pinout](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/sd-card-pinout.png)
+
 
 SD card **must be formated** before it can be used in MicroPython. At the moment there is no option to format SD card from MicroPython.
 
@@ -68,7 +55,7 @@ External file system can be **mounted**/**unmounted** using the following functi
 
 ---
 
-### Using prepared file system images
+## Using prepared file system images
 
 ---
 
