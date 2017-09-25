@@ -209,7 +209,7 @@ STATIC mp_obj_t machine_hw_spi_init(mp_uint_t n_args, const mp_obj_t *pos_args, 
 {
     machine_hw_spi_obj_t *self = pos_args[0];
 
-    enum { ARG_spihost, ARG_baudrate, ARG_polarity, ARG_phase, ARG_firstbit, ARG_sck, ARG_mosi, ARG_miso, ARG_cs, ARD_duplex };
+    enum { ARG_spihost, ARG_baudrate, ARG_polarity, ARG_phase, ARG_firstbit, ARG_sck, ARG_mosi, ARG_miso, ARG_cs, ARG_duplex, ARG_bits };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_spihost,                   MP_ARG_INT, {.u_int = -1} },
         { MP_QSTR_baudrate, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = -1} },
@@ -221,6 +221,7 @@ STATIC mp_obj_t machine_hw_spi_init(mp_uint_t n_args, const mp_obj_t *pos_args, 
         { MP_QSTR_miso,     MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
         { MP_QSTR_cs,       MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
         { MP_QSTR_duplex,   MP_ARG_KW_ONLY | MP_ARG_INT, {.u_bool = -1} },
+        { MP_QSTR_bits,     MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 8} },
     };
 
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
@@ -236,7 +237,7 @@ STATIC mp_obj_t machine_hw_spi_init(mp_uint_t n_args, const mp_obj_t *pos_args, 
 
     machine_hw_spi_init_internal(self, args[ARG_spihost].u_int, args[ARG_baudrate].u_int,
                                  args[ARG_polarity].u_int, args[ARG_phase].u_int,
-                                 args[ARG_firstbit].u_int, sck, mosi, miso, cs, args[ARG_firstbit].u_bool);
+                                 args[ARG_firstbit].u_int, sck, mosi, miso, cs, args[ARG_duplex].u_bool);
    return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_KW(machine_hw_spi_init_obj, 0, machine_hw_spi_init);
@@ -244,7 +245,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_KW(machine_hw_spi_init_obj, 0, machine_hw_spi_ini
 //---------------------------------------------------------------------------------------------------------------
 mp_obj_t machine_hw_spi_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
-    enum { ARG_spihost, ARG_baudrate, ARG_polarity, ARG_phase, ARG_firstbit, ARG_sck, ARG_mosi, ARG_miso, ARG_cs, ARD_duplex };
+    enum { ARG_spihost, ARG_baudrate, ARG_polarity, ARG_phase, ARG_firstbit, ARG_sck, ARG_mosi, ARG_miso, ARG_cs, ARG_duplex };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_spihost,  MP_ARG_REQUIRED | MP_ARG_INT , {.u_int = HSPI_HOST} },
         { MP_QSTR_baudrate, MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = 1000000} },
@@ -256,6 +257,7 @@ mp_obj_t machine_hw_spi_make_new(const mp_obj_type_t *type, size_t n_args, size_
         { MP_QSTR_miso,     MP_ARG_KW_ONLY  | MP_ARG_REQUIRED | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
         { MP_QSTR_cs,       MP_ARG_KW_ONLY  | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
         { MP_QSTR_duplex,   MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = 1} },
+        { MP_QSTR_bits,     MP_ARG_KW_ONLY  | MP_ARG_INT, {.u_int = 8} },
     };
 
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
@@ -265,6 +267,7 @@ mp_obj_t machine_hw_spi_make_new(const mp_obj_type_t *type, size_t n_args, size_
     self->base.type = &machine_hw_spi_type;
     self->state = MACHINE_HW_SPI_STATE_NONE;
 
+    self->devcfg.spics_ext_io_num = -1;
     int8_t cs = -1;
     if (args[ARG_cs].u_obj != MP_OBJ_NULL) cs = machine_pin_get_gpio(args[ARG_cs].u_obj);
 
@@ -279,7 +282,7 @@ mp_obj_t machine_hw_spi_make_new(const mp_obj_type_t *type, size_t n_args, size_
         machine_pin_get_gpio(args[ARG_mosi].u_obj),
         machine_pin_get_gpio(args[ARG_miso].u_obj),
     	cs,
-        args[ARG_firstbit].u_bool);
+        args[ARG_duplex].u_bool);
 
     return MP_OBJ_FROM_PTR(self);
 }

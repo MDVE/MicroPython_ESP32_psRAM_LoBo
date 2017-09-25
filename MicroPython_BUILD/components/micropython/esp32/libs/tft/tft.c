@@ -1177,7 +1177,7 @@ static int load_file_font(const char * fontfile, int info)
 
 	if (info) {
 		if (width != 0) {
-			printf("Fixed width font:\r\n  size: %d  width: %d  height: %d  characters: %d (%d~%d)",
+			printf("Fixed width font:\r\n  size: %d  width: %d  height: %d  characters: %d (%d~%d)\n",
 					size, width, height, numchar, first, last);
 		}
 		else {
@@ -1330,14 +1330,18 @@ int compile_font_file(char *fontfile, uint8_t dbg)
 	sprintf(outfile, "RPH_font");
     if (fwrite(outfile, 1, 8, ffd_out) != 8) goto error;
 
+    fclose(ffd_out);
+    ffd_out = NULL;
+
 	// === Test compiled font ===
 	sprintf(outfile, "%s", fontfile);
 	sprintf(outfile+strlen(outfile)-1, "fon");
 
-	uint8_t *uf = userfont; // save userfont pointer
+	uint8_t *uf = userfont; // save user font pointer
 	userfont = NULL;
-	if (load_file_font(outfile, 1) == 0) {
+	if (load_file_font(outfile, 1) != 0) {
 		sprintf(err_msg, "Error compiling file!");
+		err = 10;
 	}
 	else {
 		free(userfont);

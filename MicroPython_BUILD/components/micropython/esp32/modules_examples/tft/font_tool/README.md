@@ -45,3 +45,13 @@ unsigned char vera18[] =
 
 The font name (**vera18** here) will be different for different font, you can change it to any other name.
 
+---
+
+You can transfer **c** source file to the MicroPython file system and use **tft.compileFont()** to compile the font
+```
+tft.compileFont("vera.c")
+```
+and use it as external font:
+```
+tft.font("vera.fon")
+```
