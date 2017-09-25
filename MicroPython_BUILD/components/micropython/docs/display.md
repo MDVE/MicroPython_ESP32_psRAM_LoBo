@@ -298,7 +298,7 @@ The tuple (touched, x, y) wil be returned.
 
 If the optional argument *raw* is True, the raw touch controller coordinates are returned. Otherwise, the calibrated screen coordinates are returned.
 
-** The touch calibration program will be included later**. At the moment, predefined calibration constants will give the correct coordinates for most 2.4" ILI9341 displays.
+**The touch calibration program will be included later**. At the moment, predefined calibration constants will give the correct coordinates for most 2.4" ILI9341 displays.
 
 
 
@@ -307,8 +307,12 @@ If the optional argument *raw* is True, the raw touch controller coordinates are
 
 ### Tested on
 
+ESP32-WROVER-KIT v3, ST7789V controller, 240x320
 ![Tested on](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/disp_wrower-kit.jpg)
+2.4" 240x320 ILI9341 conroller with Touch panel from eBay
 ![Tested on](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/disp_ili9341.jpg)
+3.5" 320x480 ILI9844 controller with Touch panel from BuyDisplay
 ![Tested on](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/disp_9488.jpg)
+1.8" 128x160 ST7735 conroller from eBay
 ![Tested on](https://raw.githubusercontent.com/loboris/MicroPython_ESP32_psRAM_LoBo/master/Documents/disp_7735.jpg)
 
