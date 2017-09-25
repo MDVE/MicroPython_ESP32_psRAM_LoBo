@@ -9,6 +9,8 @@
 
 [Telnet & FTP servers](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/blob/master/MicroPython_BUILD/components/micropython/docs/servers.md)
 
+[Display module](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/blob/master/MicroPython_BUILD/components/micropython/docs/display.md)
+
 ---
 
 ### Other ESP32 documentation
