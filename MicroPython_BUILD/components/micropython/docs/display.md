@@ -280,9 +280,10 @@ Arguments
 * **brightness**: float; 0 ~ 1.0
 
 
-### tft.compileFont(file_name)
+### tft.compileFont(file_name [,debug])
 
 Compile the source font file (must have **.c** extension) to the binary font file (same name, **.fon** extension) which can be used as external font.
+If *debug=True* the information about compiled font will be printed,
 
 You can create the **c** source file from any **tft** font using the included [ttf2c_vc2003.exe](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/tree/master/MicroPython_BUILD/components/micropython/esp32/modules_examples/tft/font_tool/) program.
 See [README](https://github.com/loboris/MicroPython_ESP32_psRAM_LoBo/tree/master/MicroPython_BUILD/components/micropython/esp32/modules_examples/tft/font_tool/README.md) for instructions.
