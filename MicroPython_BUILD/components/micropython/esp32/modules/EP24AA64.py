@@ -16,7 +16,7 @@ class EP24AA64():
     speed=400000
     sdapin=4
     sclpin=16
-    wppin=22
+    wppin=0
     # i2c automatically created
 
     def __init__(self, chipType=t24C64, addr=address,  speed=speed,  sda=sdapin,  scl=sclpin,  writeprotect=wppin):
