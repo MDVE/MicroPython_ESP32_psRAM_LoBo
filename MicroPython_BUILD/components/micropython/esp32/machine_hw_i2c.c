@@ -320,6 +320,27 @@ STATIC mp_obj_t machine_hw_i2c_scan(mp_obj_t self_in)
 MP_DEFINE_CONST_FUN_OBJ_1(machine_hw_i2c_scan_obj, machine_hw_i2c_scan);
 
 //----------------------------------------------------------------------------------------------------
+STATIC mp_obj_t machine_hw_i2c_ping(mp_uint_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args)
+{
+    STATIC const mp_arg_t machine_i2c_ping_args[] = {
+        { MP_QSTR_addr,    MP_ARG_REQUIRED | MP_ARG_INT, {.u_int = 0x08} },
+    };
+
+    machine_hw_i2c_obj_t *self = pos_args[0];
+
+    // parse args
+    mp_arg_val_t args[MP_ARRAY_SIZE(machine_i2c_ping_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(args), machine_i2c_ping_args, args);
+
+    if (hw_i2c_slave_ping(self, args[0].u_int)) {
+    	return mp_obj_new_int(1);
+    }
+
+    return mp_obj_new_int(0);
+}
+MP_DEFINE_CONST_FUN_OBJ_KW(machine_hw_i2c_ping_obj, 1, machine_hw_i2c_ping);
+
+//----------------------------------------------------------------------------------------------------
 STATIC mp_obj_t machine_hw_i2c_readfrom(mp_uint_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args)
 {
     STATIC const mp_arg_t machine_i2c_readfrom_args[] = {
@@ -475,6 +496,7 @@ STATIC const mp_rom_map_elem_t machine_hw_i2c_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_scan),                (mp_obj_t)&machine_hw_i2c_scan_obj },
 
     // standard bus operations
+    { MP_ROM_QSTR(MP_QSTR_ping),                (mp_obj_t)&machine_hw_i2c_ping_obj },
     { MP_ROM_QSTR(MP_QSTR_readfrom),            (mp_obj_t)&machine_hw_i2c_readfrom_obj },
     { MP_ROM_QSTR(MP_QSTR_readfrom_into),       (mp_obj_t)&machine_hw_i2c_readfrom_into_obj },
     { MP_ROM_QSTR(MP_QSTR_writeto),             (mp_obj_t)&machine_hw_i2c_writeto_obj },
